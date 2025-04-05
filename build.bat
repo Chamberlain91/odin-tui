@@ -76,12 +76,12 @@ GOTO :parse
         SET BUILD_FLAGS=!BUILD_FLAGS! -warnings-as-errors -vet
     )
 
-    REM Windows executables can selectively show the console.
-    IF DEFINED SHOW_WINDOWS_CONSOLE (
-        SET BUILD_FLAGS=!BUILD_FLAGS! -subsystem:console
-    ) else (
-        SET BUILD_FLAGS=!BUILD_FLAGS! -subsystem:windows
-    )
+    @REM REM Windows executables can selectively show the console.
+    @REM IF DEFINED SHOW_WINDOWS_CONSOLE (
+    @REM     SET BUILD_FLAGS=!BUILD_FLAGS! -subsystem:console
+    @REM ) else (
+    @REM     SET BUILD_FLAGS=!BUILD_FLAGS! -subsystem:windows
+    @REM )
 
     REM Add flags when using the address sanitizer
     IF DEFINED USE_SANITIZER (

@@ -11,13 +11,11 @@ main :: proc() {
         context.allocator = tui.create_scoped_tracking_allocator()
     }
 
-    tui.enable_alt_buffer()
-    defer tui.disable_alt_buffer()
-
-    tui.erase_screen()
-    tui.cursor_move_home()
+    tui.scoped_tui_application("Hello TUI")
+    tui.show_cursor(false)
 
     tui.write("this is some text\non some other lines\nbut\nI don't really care\n")
+    fmt.printfln("Terminal window: {}", tui.window_size())
 
     loop: for true {
         input := tui.read_input()
