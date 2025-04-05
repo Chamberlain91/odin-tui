@@ -1,0 +1,34 @@
+{
+    "$schema": "https://raw.githubusercontent.com/DanielGavin/ols/master/misc/ols.schema.json",
+    "collections": [
+        {
+            "name": "oak",
+            "path": "src/dependencies/oak/src"
+        }
+    ],
+    "profile": "default",
+    "profiles": [
+        {
+            "name": "default",
+            "checker_path": [
+                "src",
+                "src/dependencies/oak/src/algorithms",
+                "src/dependencies/oak/src/core",
+                "src/dependencies/oak/src/debug",
+                "src/dependencies/oak/src/gpu",
+                "src/dependencies/oak/src/gpu/ref",
+                "src/dependencies/oak/src/sound"
+            ]
+        }
+    ],
+    "checker_args": "-vet -strict-style -thread-count:1",
+    "enable_document_symbols": true,
+    "enable_semantic_tokens": true,
+    "enable_inlay_hints": true,
+    "enable_snippets": true,
+    "enable_format": true,
+    "enable_hover": true,
+    "enable_procedure_context": true,
+    "enable_fake_methods": true,
+    "enable_references": true
+}

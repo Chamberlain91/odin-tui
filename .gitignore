@@ -1,0 +1,37 @@
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Build artifacts
+*.obj
+*.o
+
+# Web Assembly
+*.wasm
+*.wat
+
+# VS Code
+.vscode
+
+# Runtime generated files
+generated_*
+latest.log
