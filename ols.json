@@ -11,13 +11,8 @@
         {
             "name": "default",
             "checker_path": [
-                "src",
-                "src/dependencies/oak/src/algorithms",
-                "src/dependencies/oak/src/core",
-                "src/dependencies/oak/src/debug",
-                "src/dependencies/oak/src/gpu",
-                "src/dependencies/oak/src/gpu/ref",
-                "src/dependencies/oak/src/sound"
+                "src/tui",
+                "src"
             ]
         }
     ],
