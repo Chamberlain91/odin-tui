@@ -1,11 +1,5 @@
 {
     "$schema": "https://raw.githubusercontent.com/DanielGavin/ols/master/misc/ols.schema.json",
-    "collections": [
-        {
-            "name": "oak",
-            "path": "src/dependencies/oak/src"
-        }
-    ],
     "profile": "default",
     "profiles": [
         {

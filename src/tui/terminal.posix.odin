@@ -5,12 +5,14 @@ package oak_tui
 import "core:c"
 import "core:fmt"
 import "core:os"
+import "core:strings"
 import "core:sys/posix"
 
 prev_term: posix.termios
 
-@(init, private = "file")
 _init_terminal :: proc() {
+
+    posix.setbuf(posix.stdout, nil)
 
     // Get current terminal attributes.
     if posix.tcgetattr(posix.STDIN_FILENO, &prev_term) == .FAIL {
@@ -36,13 +38,23 @@ _init_terminal :: proc() {
     }
 }
 
-_read :: proc() -> (int, bool) {
-    n, err := os.read(os.stdin, _buffer[:])
-    if err == nil {
+_init_escape_table :: proc() {
+    unimplemented()
+}
+
+_is_tty_in :: proc() -> bool {
+    return cast(bool)posix.isatty(posix.STDIN_FILENO)
+}
+
+_is_tty_out :: proc() -> bool {
+    return cast(bool)posix.isatty(posix.STDOUT_FILENO)
+}
+
+_read :: proc(buffer: []byte) -> (int, bool) {
+    if n, err := os.read(os.stdin, buffer); err == nil {
         return n, true
-    } else {
-        return 0, false
     }
+    return 0, false
 }
 
 _window_size :: proc() -> [2]int {
@@ -55,6 +67,12 @@ _window_size :: proc() -> [2]int {
         int(ws.ws_row),
     }
 }
+
+_get_escape :: proc(code: Escape_Code) -> string {
+    unimplemented()
+}
+
+// -----------------------------------------------------------------------------
 
 foreign import _libc "system:c"
 @(default_calling_convention = "c")

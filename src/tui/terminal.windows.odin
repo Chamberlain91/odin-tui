@@ -5,7 +5,6 @@ package oak_tui
 import "core:c/libc"
 import "core:fmt"
 import "core:os"
-import "core:slice"
 import "core:strings"
 import win "core:sys/windows"
 import "core:unicode/utf16"
@@ -13,7 +12,6 @@ import "core:unicode/utf16"
 prev_out_mode: win.DWORD
 prev_in_mode: win.DWORD
 
-@(init, private = "file")
 _init_terminal :: proc() {
 
     win.GetConsoleMode(win.HANDLE(os.stdout), &prev_out_mode)
@@ -62,7 +60,27 @@ _init_terminal :: proc() {
     }
 }
 
-_read :: proc() -> (int, bool) {
+_init_escape_table :: proc() {
+
+    // xterm
+    _escape_table[.EnterAltScreen] = {"\e[?47h", false}
+    _escape_table[.ExitAltScreen] = {"\e[?47l", false}
+    _escape_table[.SetTitle] = {"\e[?47l", false}
+
+    // unimplemented()
+}
+
+_is_tty_in :: proc() -> bool {
+    // TODO: I think I read somewhere that SetConsoleMode(stdin) fails when redirected?
+    return true
+}
+
+_is_tty_out :: proc() -> bool {
+    // TODO: ...so perhaps the same logic above?
+    return true
+}
+
+_read :: proc(buffer: []byte) -> (int, bool) {
 
     nEvents: u32
     if !win.GetNumberOfConsoleInputEvents(win.HANDLE(os.stdin), &nEvents) {
@@ -90,19 +108,13 @@ _read :: proc() -> (int, bool) {
         }
 
         // Copy UTF16 input text into the UTF8 _buffer.
-        n := utf16.decode_to_utf8(_buffer[:], wbuffer[:wb])
+        n := utf16.decode_to_utf8(buffer[:], wbuffer[:wb])
 
         return n, true
     }
 
     // No input
     return 0, false
-}
-
-foreign import kernel32 "system:Kernel32.lib"
-@(default_calling_convention = "system")
-foreign kernel32 {
-    ReadConsoleA :: proc(hConsoleInput: win.HANDLE, lpBuffer: win.LPVOID, nNumberOfCharsToRead: win.DWORD, lpNumberOfCharsRead: win.LPDWORD, pInputControl: win.PCONSOLE_READCONSOLE_CONTROL) -> win.BOOL ---
 }
 
 _window_size :: proc() -> [2]int {
@@ -117,4 +129,8 @@ _window_size :: proc() -> [2]int {
         int(sbi.srWindow.Bottom - sbi.srWindow.Top) + 1,
         int(sbi.srWindow.Right - sbi.srWindow.Left) + 1,
     }
+}
+
+_get_escape :: proc(code: Escape_Code) -> string {
+    unimplemented()
 }
