@@ -16,13 +16,31 @@ _original_term: posix.termios
 
 _initialize :: proc() {
 
-    posix.setbuf(posix.stdout, nil)
-
     _set_raw_mode()
 
-    posix.atexit(_at_exit)
+    posix.atexit(proc "c" () {
+        context = runtime.default_context()
+
+        erase_screen()
+        reset_color()
+        enable_alternate_screen(false)
+        enable_mouse(false)
+        show_cursor(true)
+
+        fmt.print("\a")
+
+        posix.tcsetattr(posix.STDIN_FILENO, .TCSANOW, &_original_term)
+    })
+
+    erase_screen()
+    reset_color()
+    enable_alternate_screen()
+    set_cursor_position({0, 0})
+    enable_mouse()
 
     _set_raw_mode :: proc() {
+
+        posix.setbuf(posix.stdout, nil)
 
         // Get current terminal attributes.
         if posix.tcgetattr(posix.STDIN_FILENO, &_original_term) == .FAIL {
@@ -41,11 +59,6 @@ _initialize :: proc() {
         if posix.tcsetattr(posix.STDIN_FILENO, .TCSANOW, &term) == .FAIL {
             panic("Unable to set new terminal attributes.")
         }
-
-        fmt.print("\e[?1049h")
-        fmt.print("\e[0m") // ??
-        fmt.print("\e[2J") // clear screen?
-        fmt.print("\e[?1015h")
     }
 }
 
@@ -53,18 +66,6 @@ _shutdown :: proc() {
     // TODO
 }
 
-_at_exit :: proc "c" () {
-    context = runtime.default_context()
-
-    fmt.print("\e[0m")
-    fmt.print("\e[2J")
-    fmt.print("\e[?1049l")
-    fmt.print("\e[?1015l")
-    enable_mouse(false)
-    show_cursor(true)
-
-    posix.tcsetattr(posix.STDIN_FILENO, .TCSANOW, &_original_term)
-}
 
 _is_tty_in :: proc() -> bool {
     return cast(bool)posix.isatty(posix.STDIN_FILENO)
@@ -80,11 +81,10 @@ _process_input :: proc() {
     length: int
 
     for true {
-
         if n, err := os.read(os.stdin, buffer[length:length + 1]); err == nil && n > 0 {
             ch := buffer[length]
 
-            if ch == 0x1C {     // ctrl+backslash to exit
+            if ch == '`' {     // tilde to exit
                 os.exit(0)
             }
 
@@ -110,41 +110,4 @@ _process_input :: proc() {
     if input[0] == '\e' && length > 1 {
         // ...
     }
-}
-
-_process_mouse_input :: proc(input: []byte) -> bool {
-
-    SEPARATOR :: 0x3B
-
-    parse := input[:]
-    s0 := slice.linear_search(parse, SEPARATOR) or_return
-
-    // Extra button state.
-    button_state, _ := strconv.parse_uint(string(parse[:s0]))
-    button := Mouse_Button(button_state & 0b11)
-    if (button_state & 0b1000000) != 0 {
-        button = Mouse_Button(4 + (button_state - 0b1000000))
-    }
-    button_modifiers := transmute(Modifiers)cast(u8)((button_state >> 2) & 0b111)
-
-    parse = parse[s0 + 1:]
-    s1 := slice.linear_search(parse, SEPARATOR) or_return
-
-    // Extract coordinate state.
-    x, _ := strconv.parse_int(string(parse[:s1]))
-    y, _ := strconv.parse_int(string(parse[s1 + 1:len(parse) - 1]))
-
-    // Determine 'm' or 'M' for pressed state.
-    is_pressed := parse[len(parse) - 1] == 'M'
-
-    // Append event to queue
-    ev := Mouse_Event {
-        button    = button,
-        modifiers = button_modifiers,
-        pressed   = is_pressed,
-        position  = {x, y},
-    }
-    queue.append(&_events, ev)
-
-    return true
 }

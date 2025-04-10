@@ -1,11 +1,18 @@
 package app
 
 @(require) import "core:fmt"
+import "core:log"
 import "core:os"
 import "core:time"
 import "term"
 
 main :: proc() {
+
+    when ODIN_DEBUG {
+        context.allocator = term.create_scoped_tracking_allocator()
+        context.temp_allocator = term.create_scoped_tracking_allocator(context.temp_allocator)
+    }
+    context.logger = term.create_scoped_logger()
 
     // This application is useless unless ran interactively.
     if !term.is_interactive() {
@@ -16,21 +23,12 @@ main :: proc() {
     term.initialize()
     defer term.shutdown()
 
-    term.enable_alternate_screen()
-    term.enable_mouse()
-    term.set_cursor_position({0, 0})
-
     loop: for true {
         defer free_all(context.temp_allocator)
         defer time.sleep(time.Millisecond) // stay cool
 
         // Handle events for this iteration.
         term.process_input()
-
-        if term.has_event() {
-            // Clear the screen
-            fmt.print("\e[2J")
-        }
 
         // Chew threw event queue.
         for term.has_event() {
@@ -44,7 +42,7 @@ main :: proc() {
             case term.Size_Event:
                 extra = fmt.tprint(ev)
             case term.Key_Event:
-                if ev.key == .Escape || ev.str == "q" {
+                if ev.key == .Escape || ev.ch == 'q' {
                     break loop
                 }
                 extra = fmt.tprint(ev)
@@ -64,6 +62,10 @@ main :: proc() {
             term.set_foreground_color(.Default)
             term.set_cursor_position(cursor_pos)
         }
+
+        // TODO: Make zero oriented
+        term.set_cursor_position({1, 1})
+        fmt.printf("Current time: {}:{}:{}", time.clock(time.now()))
     }
 }
 
