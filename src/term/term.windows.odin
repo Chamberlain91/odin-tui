@@ -5,10 +5,8 @@ package term
 import "base:runtime"
 import "core:c/libc"
 import "core:container/queue"
-import "core:fmt"
 import "core:log"
 import "core:os"
-import "core:strings"
 import win "core:sys/windows"
 import "core:unicode/utf16"
 
@@ -148,5 +146,19 @@ _read_stdin :: proc() {
 
         // No input records.
         return {}
+    }
+}
+
+_terminal_size :: proc() -> [2]int {
+
+    sbi: win.CONSOLE_SCREEN_BUFFER_INFO
+
+    if !win.GetConsoleScreenBufferInfo(win.HANDLE(os.stdout), &sbi) {
+        panic("Unable to retrieve terminal size.")
+    }
+
+    return [2]int {     //
+        int(sbi.srWindow.Bottom - sbi.srWindow.Top) + 1,
+        int(sbi.srWindow.Right - sbi.srWindow.Left) + 1,
     }
 }

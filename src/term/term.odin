@@ -1,15 +1,11 @@
 package term
 
-import "core:c/libc"
 import "core:container/queue"
 import "core:fmt"
 import "core:log"
 import "core:os"
-import "core:slice"
 import "core:strconv"
 import "core:strings"
-import "core:unicode"
-import "core:unicode/utf8"
 
 DEV_BUILD :: #config(DEV_BUILD, ODIN_DEBUG)
 
@@ -44,16 +40,16 @@ is_terminal_output :: #force_inline proc() -> bool {
 }
 
 enable_alternate_screen :: proc(enable := true) {
-    write(enable ? "\e[?1049h" : "\e[?1049l")
+    fmt.print(enable ? "\e[?1049h" : "\e[?1049l")
 }
 
 enable_mouse :: proc(enable := true) {
-    write(enable ? "\e[?1003h" : "\e[?1003l") // ANY EVENT TRACKING
-    write(enable ? "\e[?1006h" : "\e[?1006l") // SGR EXTENSION
+    fmt.print(enable ? "\e[?1003h" : "\e[?1003l") // ANY EVENT TRACKING
+    fmt.print(enable ? "\e[?1006h" : "\e[?1006l") // SGR EXTENSION
 }
 
 show_cursor :: proc(visible := true) {
-    write(visible ? "\e[?25h" : "\e[?25l")
+    fmt.print(visible ? "\e[?25h" : "\e[?25l")
 }
 
 process_input :: proc() {
@@ -85,6 +81,10 @@ process_input :: proc() {
     }
 }
 
+size :: proc() -> [2]int {
+    return _terminal_size()
+}
+
 // Determines if any events have been placed in the queue.
 has_event :: proc() -> bool {
     return queue.len(_events) > 0
@@ -104,7 +104,7 @@ cursor_position :: proc() -> [2]int {
 }
 
 set_cursor_position :: proc(pos: [2]int) {
-    writef("\e[%d;%dH", pos.y, pos.x)
+    fmt.printf("\e[%d;%dH", pos.y, pos.x)
 }
 
 move_cursor_up :: proc() {
@@ -170,27 +170,17 @@ background_color :: proc() -> Color {
 }
 
 set_foreground_color :: proc(color: Color) {
-    writef("\e[%vm", 30 + int(color))
+    fmt.printf("\e[%vm", 30 + int(color))
 }
 
 set_background_color :: proc(color: Color) {
-    writef("\e[%vm", 40 + int(color))
+    fmt.printf("\e[%vm", 40 + int(color))
 }
 
 // TODO: Text attributes?
 
 reset_color :: proc() {
-    writef("\e[0m")
-}
-
-@(private, deprecated = "Possibly not great...")
-write :: proc(args: ..any, sep := " ", flush := true) {
-    fmt.fprint(os.stdout, ..args, sep = sep, flush = flush)
-}
-
-@(private, deprecated = "Possibly not great...")
-writef :: proc(str: string, args: ..any, flush := true) {
-    fmt.fprintf(os.stdout, str, ..args, flush = flush)
+    fmt.print("\e[0m")
 }
 
 @(private)

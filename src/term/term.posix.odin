@@ -7,9 +7,6 @@ import "core:c"
 import "core:container/queue"
 import "core:fmt"
 import "core:os"
-import "core:slice"
-import "core:strconv"
-import "core:strings"
 import "core:sys/posix"
 
 _original_term: posix.termios
@@ -75,39 +72,51 @@ _is_tty_out :: proc() -> bool {
     return cast(bool)posix.isatty(posix.STDOUT_FILENO)
 }
 
-_process_input :: proc() {
+_has_stdin_input :: proc() -> bool {
+
+    TIMEOUT_MS :: 1
+
+    rdfs: posix.fd_set
+    posix.FD_ZERO(&rdfs)
+    posix.FD_SET(posix.STDIN_FILENO, &rdfs)
+
+    tv: posix.timeval
+    tv.tv_usec = posix.suseconds_t(TIMEOUT_MS * 1000)
+
+    return posix.select(1, &rdfs, nil, nil, &tv) == 1
+}
+
+_read_stdin :: proc() {
 
     @(static) buffer: [1024]byte
-    length: int
 
-    for true {
-        if n, err := os.read(os.stdin, buffer[length:length + 1]); err == nil && n > 0 {
-            ch := buffer[length]
-
-            if ch == '`' {     // tilde to exit
-                os.exit(0)
-            }
-
-            length += 1
-        } else do break
+    n, err := os.read(os.stdin, buffer[:])
+    if err == nil && n > 0 {
+        queue.append_elems(&_input, ..buffer[:n])
     }
+}
 
-    // No input to process.
-    if length == 0 do return
-
-    // Get slice of actual input
-    input := buffer[:length]
-
-    // Appears to be a mouse event
-    if strings.starts_with(string(input), "\e[<") {
-        if _process_mouse_input(input[3:]) {
-            return
-        }
+_terminal_size :: proc() -> [2]int {
+    ws: winsize
+    if ioctl(posix.STDOUT_FILENO, TIOCGWINSZ, &ws) != 0 {
+        panic("Unable to retrieve terminal size.")
     }
+    return {int(ws.ws_col), int(ws.ws_row)}
+}
 
-    fmt.printf("{:x}: {}\r\n", input, string(input))
+// -----------------------------------------------------------------------------
 
-    if input[0] == '\e' && length > 1 {
-        // ...
-    }
+foreign import _libc "system:c"
+@(default_calling_convention = "c")
+foreign _libc {
+    ioctl :: proc(fs: c.int, request: c.int, #c_vararg args: ..any) -> c.int ---
+}
+
+TIOCGWINSZ :: 0x5413
+
+winsize :: struct {
+    ws_row:    u16, // rows, in characters
+    ws_col:    u16, // columns, in characters
+    ws_xpixel: u16, // horizontal pixels
+    ws_ypixel: u16, // vertical pixels
 }
