@@ -15,6 +15,9 @@ DEV_BUILD :: #config(DEV_BUILD, ODIN_DEBUG)
 @(private)
 _events: queue.Queue(Event)
 
+@(private)
+_cursor_pos: [2]int
+
 initialize :: proc() {
     _initialize()
 }
@@ -61,7 +64,8 @@ process_input :: proc() {
     for input_available() > 0 {
 
         // Attempt to read various escape sequences.
-        if _process_mouse_input() do continue
+        if _process_mouse_input() do continue // \e[<b;y;xM
+        if _process_cursor_input() do continue // \e[y;xR
 
         // Nothing more to do if we have consumed everything.
         if input_available() == 0 do break
@@ -99,8 +103,12 @@ get_event :: proc(loc := #caller_location) -> (Event, bool) {
 }
 
 cursor_position :: proc() -> [2]int {
-    // TODO
-    return INVALID_CURSOR_POSITION
+    // Ask for a cursor update.
+    fmt.print("\e[6n")
+    // Process all pending input.
+    process_input()
+    // Return the latest known.
+    return _cursor_pos
 }
 
 set_cursor_position :: proc(pos: [2]int) {
@@ -291,6 +299,10 @@ input_consume :: proc(n: int, loc := #caller_location) {
 @(private)
 input_starts_with :: proc(pattern: string) -> bool {
 
+    if input_available() < len(pattern) {
+        return false
+    }
+
     @(static) buffer: [64]byte
     for i in 0 ..< len(pattern) {
         buffer[i] = input_get(i)
@@ -323,6 +335,41 @@ input_copy :: proc(buffer: []byte, offset: int, count: int, loc := #caller_locat
 // -----------------------------------------------------------------------------
 
 @(private)
+_process_cursor_input :: proc() -> bool {
+
+    @(static) buffer: [16]byte
+
+    // \e[y;xR
+
+    // Ensure the input looks like cursor input.
+    if !input_starts_with("\e[") do return false
+
+    start: int
+    sep: int
+
+    // Extract {y} value.
+    sep = input_index(sep, ';')
+    if sep == -1 do return false
+    y_bytes := input_copy(buffer[:], 2, sep)
+    y, _ := strconv.parse_int(string(y_bytes))
+
+    sep += 1 // skip separator
+    start = sep
+
+    // Extract {x} value.
+    sep = input_index(sep, 'R')
+    if sep == -1 do return false
+    x_bytes := input_copy(buffer[:], start, sep - start)
+    x, _ := strconv.parse_int(string(x_bytes))
+
+    // Update cursor position
+    input_consume(sep + 1)
+    _cursor_pos = {x, y}
+
+    return true
+}
+
+@(private)
 _process_mouse_input :: proc() -> bool {
 
     state, x, y, pressed, ok := decode_mouse_input()
@@ -351,20 +398,17 @@ _process_mouse_input :: proc() -> bool {
 
         @(static) buffer: [16]byte
 
-        SEPARATOR :: ';'
-
         // esc [ < {button};{Px};{Py}m (released)
         // esc [ < {button};{Px};{Py}M (pressed)
 
         // Ensure the input looks like mouse input.
-        if input_available() < 3 do return
         if !input_starts_with("\e[<") do return
 
         start: int
         sep: int
 
         // Extract {button} value.
-        sep = input_index(sep, SEPARATOR)
+        sep = input_index(sep, ';')
         if sep == -1 do return
         state_bytes := input_copy(buffer[:], 3, sep)
         state, _ = strconv.parse_int(string(state_bytes))
@@ -373,7 +417,7 @@ _process_mouse_input :: proc() -> bool {
         start = sep
 
         // Extract {Px} value.
-        sep = input_index(sep, SEPARATOR)
+        sep = input_index(sep, ';')
         if sep == -1 do return
         x_bytes := input_copy(buffer[:], start, sep - start)
         x, _ = strconv.parse_int(string(x_bytes))

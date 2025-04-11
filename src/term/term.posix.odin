@@ -5,39 +5,25 @@ package term
 import "base:runtime"
 import "core:c"
 import "core:container/queue"
-import "core:fmt"
 import "core:os"
 import "core:sys/posix"
 
 _original_term: posix.termios
+_raw_mode: bool
 
 _initialize :: proc() {
 
-    _set_raw_mode()
+    _enter_raw_mode()
 
-    posix.atexit(proc "c" () {
-        context = runtime.default_context()
-
-        erase_screen()
-        reset_color()
-        enable_alternate_screen(false)
-        enable_mouse(false)
-        show_cursor(true)
-
-        fmt.print("\a")
-
-        posix.tcsetattr(posix.STDIN_FILENO, .TCSANOW, &_original_term)
-    })
-
+    enable_alternate_screen()
     erase_screen()
     reset_color()
-    enable_alternate_screen()
     set_cursor_position({0, 0})
     enable_mouse()
 
-    _set_raw_mode :: proc() {
+    _enter_raw_mode :: proc() {
 
-        posix.setbuf(posix.stdout, nil)
+        posix.atexit(_exit_raw_mode)
 
         // Get current terminal attributes.
         if posix.tcgetattr(posix.STDIN_FILENO, &_original_term) == .FAIL {
@@ -56,13 +42,32 @@ _initialize :: proc() {
         if posix.tcsetattr(posix.STDIN_FILENO, .TCSANOW, &term) == .FAIL {
             panic("Unable to set new terminal attributes.")
         }
+
+        _raw_mode = true
     }
 }
 
 _shutdown :: proc() {
-    // TODO
+    _exit_raw_mode()
 }
 
+@(private = "file")
+_exit_raw_mode :: proc "c" () {
+
+    if !_raw_mode do return
+
+    context = runtime.default_context()
+
+    erase_screen()
+    reset_color()
+    enable_alternate_screen(false)
+    enable_mouse(false)
+    show_cursor(true)
+
+    posix.tcsetattr(posix.STDIN_FILENO, .TCSANOW, &_original_term)
+
+    _raw_mode = false
+}
 
 _is_tty_in :: proc() -> bool {
     return cast(bool)posix.isatty(posix.STDIN_FILENO)
@@ -92,7 +97,7 @@ _read_stdin :: proc() {
 
     n, err := os.read(os.stdin, buffer[:])
     if err == nil && n > 0 {
-        queue.append_elems(&_input, ..buffer[:n])
+        queue.append(&_input, ..buffer[:n])
     }
 }
 

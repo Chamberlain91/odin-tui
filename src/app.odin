@@ -32,35 +32,25 @@ main :: proc() {
         // Chew threw event queue.
         for term.has_event() {
 
-            extra: string
-
             switch ev in term.get_event() or_break {
             case term.Mouse_Event:
                 term.set_cursor_position(ev.position)
-                extra = fmt.tprint(ev)
             case term.Size_Event:
-                extra = fmt.tprint(ev)
+            // TODO
             case term.Key_Event:
                 if ev.key == .Escape || ev.ch == 'q' {
                     break loop
                 }
-                extra = fmt.tprint(ev)
             }
-
-            cursor_pos := term.cursor_position()
-
-            term.set_foreground_color(.Yellow)
-            fmt.printf("x: %i, y: %i", expand_values(cursor_pos))
-
-            if len(extra) > 0 {
-                term.set_foreground_color(.Cyan)
-                term.set_cursor_position(cursor_pos + {0, 1})
-                fmt.printf("event: %v", extra)
-            }
-
-            term.set_foreground_color(.Default)
-            term.set_cursor_position(cursor_pos)
         }
+
+        cursor_pos := term.cursor_position()
+
+        term.set_foreground_color(.Yellow)
+        fmt.printf("x: %i, y: %i", expand_values(cursor_pos))
+
+        term.set_foreground_color(.Default)
+        term.set_cursor_position(cursor_pos)
 
         // TODO: Make zero oriented
         term.set_cursor_position({1, 1})
