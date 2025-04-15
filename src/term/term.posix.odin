@@ -58,11 +58,10 @@ _exit_raw_mode :: proc "c" () {
 
     context = runtime.default_context()
 
-    erase_screen()
-    reset_color()
     enable_alternate_screen(false)
     enable_mouse(false)
     show_cursor(true)
+    reset_color()
 
     posix.tcsetattr(posix.STDIN_FILENO, .TCSANOW, &_original_term)
 

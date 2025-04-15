@@ -6,25 +6,29 @@ import "core:log"
 import "core:os"
 import "core:strconv"
 import "core:strings"
+import "core:unicode"
+import "core:unicode/utf8"
 
 DEV_BUILD :: #config(DEV_BUILD, ODIN_DEBUG)
 
 // Reference:
 // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Any-event-tracking
 
-@(private)
-_events: queue.Queue(Event)
-
-@(private)
-_cursor_pos: [2]int
-
 initialize :: proc() {
     _initialize()
 }
 
 shutdown :: proc() {
-    queue.destroy(&_events)
+
+    // Consume all pending input
+    // This prevents extra data (e.g. mouse input) from leaking.
+    for _has_stdin_input() {
+        _read_stdin()
+    }
+
     _shutdown()
+
+    queue.destroy(&_events)
 }
 
 // Determines if the terminal is considered interactive.
@@ -61,6 +65,8 @@ process_input :: proc() {
         _read_stdin()
     }
 
+    _process_resize()
+
     for input_available() > 0 {
 
         // Attempt to read various escape sequences.
@@ -75,7 +81,7 @@ process_input :: proc() {
 
         // Append key event to queue.
         ev := Key_Event {
-            ch  = rune(input_get(0)),
+            ch  = _decode_rune(),
             key = .Other,
         }
         queue.append(&_events, ev)
@@ -108,11 +114,11 @@ cursor_position :: proc() -> [2]int {
     // Process all pending input.
     process_input()
     // Return the latest known.
-    return _cursor_pos
+    return _state.cursor
 }
 
 set_cursor_position :: proc(pos: [2]int) {
-    fmt.printf("\e[%d;%dH", pos.y, pos.x)
+    fmt.printf("\e[%d;%dH", pos.y + 1, pos.x + 1)
 }
 
 move_cursor_up :: proc() {
@@ -189,12 +195,6 @@ set_background_color :: proc(color: Color) {
 
 reset_color :: proc() {
     fmt.print("\e[0m")
-}
-
-@(private)
-_interpolate :: proc(str: string, args: ..any) -> string {
-    @(static) temp: [32]byte
-    return fmt.bprintf(temp[:], str, ..args)
 }
 
 INVALID_CURSOR_POSITION :: [2]int{-1, -1}
@@ -276,6 +276,15 @@ Modifiers :: bit_set[Modifier;u8]
 _input: queue.Queue(byte)
 
 @(private)
+_events: queue.Queue(Event)
+
+@(private)
+_state: struct {
+    cursor: [2]int,
+    size:   [2]int,
+}
+
+@(private)
 input_available :: proc() -> int {
     return queue.len(_input)
 }
@@ -335,46 +344,76 @@ input_copy :: proc(buffer: []byte, offset: int, count: int, loc := #caller_locat
 // -----------------------------------------------------------------------------
 
 @(private)
-_process_cursor_input :: proc() -> bool {
+_decode_rune :: proc() -> rune {
+    // character: rune
+    // utf8.decode_rune_in_bytes()
+    return rune(input_get(0))
+}
 
-    @(static) buffer: [16]byte
+@(private)
+_process_cursor_input :: proc() -> (ok: bool) {
 
-    // \e[y;xR
+    // Attempt to decode reply to "get cursor position"
+    position := decode_cursor_input() or_return
 
-    // Ensure the input looks like cursor input.
-    if !input_starts_with("\e[") do return false
+    // Update state with this new position
+    _state.cursor = position - {1, 1}
 
-    start: int
-    sep: int
+    ok = true
+    return
 
-    // Extract {y} value.
-    sep = input_index(sep, ';')
-    if sep == -1 do return false
-    y_bytes := input_copy(buffer[:], 2, sep)
-    y, _ := strconv.parse_int(string(y_bytes))
+    decode_cursor_input :: proc() -> (cursor: [2]int, ok: bool) {
 
-    sep += 1 // skip separator
-    start = sep
+        @(static) buffer: [16]byte
 
-    // Extract {x} value.
-    sep = input_index(sep, 'R')
-    if sep == -1 do return false
-    x_bytes := input_copy(buffer[:], start, sep - start)
-    x, _ := strconv.parse_int(string(x_bytes))
+        // \e[{y};{x}R
 
-    // Update cursor position
-    input_consume(sep + 1)
-    _cursor_pos = {x, y}
+        // Ensure the input looks like cursor input.
+        if !input_starts_with("\e[") do return
 
-    return true
+        start: int
+        sep: int
+
+        // Extract {y} value.
+        sep = input_index(sep, ';')
+        if sep == -1 do return
+        y_bytes := input_copy(buffer[:], 2, sep)
+        cursor.y, _ = strconv.parse_int(string(y_bytes))
+
+        sep += 1 // skip separator
+        start = sep
+
+        // Extract {x} value.
+        sep = input_index(sep, 'R')
+        if sep == -1 do return
+        x_bytes := input_copy(buffer[:], start, sep - start)
+        cursor.x, _ = strconv.parse_int(string(x_bytes))
+
+        // Update cursor position
+        input_consume(sep + 1)
+
+        ok = true
+        return
+    }
+}
+
+@(private)
+_process_resize :: proc() {
+
+    if size() == _state.size do return
+    _state.size = size()
+
+    ev := Size_Event {
+        size = size(),
+    }
+    queue.append(&_events, ev)
 }
 
 @(private)
 _process_mouse_input :: proc() -> bool {
 
-    state, x, y, pressed, ok := decode_mouse_input()
-
-    if !ok do return false
+    // Attempt to decode reply to mouse movement via xterm features (SGR)
+    state, x, y, pressed := decode_mouse_input() or_return
 
     // Extra button state.
     button := Mouse_Button(state & 0b11)
