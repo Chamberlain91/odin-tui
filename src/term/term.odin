@@ -6,18 +6,19 @@ import "core:log"
 import "core:os"
 import "core:strconv"
 import "core:strings"
-import "core:unicode"
-import "core:unicode/utf8"
 
 DEV_BUILD :: #config(DEV_BUILD, ODIN_DEBUG)
 
 // Reference:
 // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Any-event-tracking
+// https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797?permalink_comment_id=3878578
 
+// Initialize the library.
 initialize :: proc() {
     _initialize()
 }
 
+// Shutdown the library, attempting to restore prior terminal state.
 shutdown :: proc() {
 
     // Consume all pending input.
@@ -47,19 +48,23 @@ is_terminal_output :: #force_inline proc() -> bool {
     return _is_tty_out()
 }
 
+// Switch to using the alternative buffer.
 enable_alternate_screen :: proc(enable := true) {
     fmt.print(enable ? "\e[?1049h" : "\e[?1049l")
 }
 
+// Enable mouse tracking within the terminal.
 enable_mouse :: proc(enable := true) {
     fmt.print(enable ? "\e[?1003h" : "\e[?1003l") // ANY EVENT TRACKING
     fmt.print(enable ? "\e[?1006h" : "\e[?1006l") // SGR EXTENSION
 }
 
+// Show or hide the cursor.
 show_cursor :: proc(visible := true) {
     fmt.print(visible ? "\e[?25h" : "\e[?25l")
 }
 
+// Process any pending input and events.
 process_input :: proc() {
 
     for _has_stdin_input() {
@@ -80,9 +85,23 @@ process_input :: proc() {
         // TODO: How do we detect just pressing escape?
         // - Read somewhere they use a timer.
 
+        for mapping, key in _mappings {
+            if len(mapping.normal) == 0 do continue
+            if input_starts_with(mapping.normal) {
+                // Append key event to queue.
+                ev := Key_Event {
+                    key = key,
+                    ch  = '.',
+                }
+                queue.append(&_events, ev)
+                input_consume(len(mapping.normal))
+                continue
+            }
+        }
+
         // Append key event to queue.
         ev := Key_Event {
-            ch  = _decode_rune(),
+            ch  = input_get(0),
             key = .Other,
         }
         queue.append(&_events, ev)
@@ -92,6 +111,7 @@ process_input :: proc() {
     }
 }
 
+// Gets the size of the terminal (in glyph count).
 size :: proc() -> [2]int {
     return _terminal_size()
 }
@@ -102,13 +122,14 @@ has_event :: proc() -> bool {
 }
 
 // Gets the next event to process.
-get_event :: proc(loc := #caller_location) -> (Event, bool) {
+get_event :: proc(loc := #caller_location) -> (Event, bool) #optional_ok {
     if has_event() {
         return queue.pop_front(&_events, loc), true
     }
     return {}, false
 }
 
+// Gets the cursor position.
 cursor_position :: proc() -> [2]int {
     // Ask for a cursor update.
     fmt.print("\e[6n")
@@ -118,59 +139,86 @@ cursor_position :: proc() -> [2]int {
     return _state.cursor
 }
 
+// Sets the cursor position.
 set_cursor_position :: proc(pos: [2]int) {
     fmt.printf("\e[%d;%dH", pos.y + 1, pos.x + 1)
 }
 
-move_cursor_up :: proc() {
-    // TODO
+// Moves the cursor up one or more lines.
+move_cursor_up :: proc(n := 1) {
+    assert(n >= 1)
+    fmt.print("\e[%dA", n)
 }
 
-move_cursor_down :: proc() {
-    // TODO
+// Moves the cursor down one or more lines.
+move_cursor_down :: proc(n := 1) {
+    assert(n >= 1)
+    fmt.printf("\e[%dB", n)
 }
 
-move_cursor_forward :: proc() {
-    // TODO
+// Moves the cursor right one or more columns.
+move_cursor_right :: proc(n := 1) {
+    assert(n >= 1)
+    fmt.printf("\e[%dC", n)
 }
 
-move_cursor_back :: proc() {
-    // TODO
+// Moves the cursor left one or more columns.
+move_cursor_left :: proc(n := 1) {
+    assert(n >= 1)
+    fmt.printf("\e[%dD", n)
 }
 
+// Moves the cursor to the beginning of one or more lines down.
+move_cursor_next_line :: proc(n := 1) {
+    assert(n >= 1)
+    fmt.printf("\e[%dE", n)
+}
+
+// Moves the cursor to the beginning of one or more lines up.
+move_cursor_previous_line :: proc(n := 1) {
+    assert(n >= 1)
+    fmt.printf("\e[%dF", n)
+}
+
+// Stores the current cursor position.
 save_cursor :: proc() {
-    // TODO
+    fmt.printf("\e[7")
 }
 
+// Restores the current cursor position.
 restore_cursor :: proc() {
-    // TODO
+    fmt.printf("\e[8")
 }
 
+// Erases a portion of the screen.
 erase_screen :: proc(mode := Erase_Mode.Whole) {
     switch mode {
     case .Whole:
         fmt.print("\e[2J")
     case .Before:
-    // TODO above cursor
+        fmt.print("\e[1J")
     case .After:
-    // TODO below cursor
+        fmt.print("\e[0J")
     }
 }
 
 erase_line :: proc(mode := Erase_Mode.Whole) {
     switch mode {
     case .Whole:
-    // TODO whole line
+        fmt.print("\e[2K")
     case .Before:
-    // TODO line before cursor
+        fmt.print("\e[1K")
     case .After:
-    // TODO line after cursor
+        fmt.print("\e[0K")
     }
 }
 
 Erase_Mode :: enum {
+    // Erases the visible portion of the screen.
     Whole,
+    // Erases the visible portion before the cursor.
     Before,
+    // Erases the visible portion after the cursor.
     After,
 }
 
@@ -184,21 +232,35 @@ background_color :: proc() -> Color {
     return .Default
 }
 
-set_foreground_color :: proc(color: Color) {
-    fmt.printf("\e[%vm", 30 + int(color))
+// Set the foreground color.
+set_foreground_color :: proc(color: Color, bright := true) {
+    fmt.printf("\e[%dm", (bright ? 90 : 30) + int(color))
 }
 
-set_background_color :: proc(color: Color) {
-    fmt.printf("\e[%vm", 40 + int(color))
+// Set the background color.
+set_background_color :: proc(color: Color, bright := true) {
+    fmt.printf("\e[%dm", (bright ? 100 : 40) + int(color))
 }
 
-// TODO: Text attributes?
+// Set the text style.
+set_style :: proc(style: Style, enable: bool) {
+    if enable {
+        fmt.printf("\e[%vm", int(style))
+    } else {
+        code := 20 + int(style)
+        if style == .Bold || style == .Dim do code = 22
+        fmt.printf("\e[%vm", code)
+    }
+}
 
-reset_color :: proc() {
+reset :: proc() {
     fmt.print("\e[0m")
 }
 
 INVALID_CURSOR_POSITION :: [2]int{-1, -1}
+
+// TODO: 256 color?
+// TODO: rgb color?
 
 Color :: enum {
     Black   = 0,
@@ -210,6 +272,17 @@ Color :: enum {
     Cyan    = 6,
     White   = 7,
     Default = 9,
+}
+
+Style :: enum {
+    Bold          = 1, // only bright
+    Dim           = 2,
+    Italics       = 3,
+    Underline     = 4,
+    Blinking      = 5, // not in vs code
+    Inverted      = 7,
+    Hidden        = 8, // ??
+    Strikethrough = 9,
 }
 
 Event :: union {
@@ -261,6 +334,9 @@ Key :: enum {
     // 0-9
     // !@#$%^&*()-_=+,<.>/?;:'"[{]}\|`~
     Other,
+    F1,
+    F2,
+    F3,
 }
 
 Modifier :: enum u8 {
@@ -270,6 +346,21 @@ Modifier :: enum u8 {
 }
 
 Modifiers :: bit_set[Modifier;u8]
+
+@(private)
+Key_Mapping :: struct {
+    normal: string,
+    shift:  string,
+    ctrl:   string,
+    alt:    string,
+}
+
+@(private)
+_mappings: [Key]Key_Mapping = #partial {
+    .F1 = {"0;59", "0;84", "0;94", "0;104"},
+    .F2 = {"0;60", "0;85", "0;95", "0;105"},
+    .F3 = {"0;61", "0;86", "0;96", "0;106"},
+}
 
 // -----------------------------------------------------------------------------
 
@@ -345,13 +436,6 @@ input_copy :: proc(buffer: []byte, offset: int, count: int, loc := #caller_locat
 }
 
 // -----------------------------------------------------------------------------
-
-@(private)
-_decode_rune :: proc() -> rune {
-    // character: rune
-    // utf8.decode_rune_in_bytes()
-    return rune(input_get(0))
-}
 
 @(private)
 _process_cursor_input :: proc() -> (ok: bool) {

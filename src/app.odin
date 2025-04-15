@@ -20,6 +20,9 @@ main :: proc() {
     term.initialize()
     defer term.shutdown()
 
+    term.enable_alternate_screen()
+    term.enable_mouse()
+
     loop: for true {
 
         // Handle events for this iteration.
@@ -30,38 +33,60 @@ main :: proc() {
 
         term.set_cursor_position({1, 10})
 
-        // Chew threw event queue.
-        for term.has_event() {
-            switch ev in term.get_event() or_break {
-            case term.Size_Event:
-            // TODO: Reallocate screen dependant resources
-            case term.Mouse_Event:
-                term.erase_screen()
-                cursor_pos := term.cursor_position()
-                defer term.set_cursor_position(cursor_pos)
-                defer term.set_foreground_color(.Default)
-                term.set_cursor_position(ev.position)
-                term.set_foreground_color(.Yellow)
-                fmt.printf("x: %i, y: %i", expand_values(ev.position))
-            case term.Key_Event:
-                if ev.key == .Escape || ev.ch == 'q' {
-                    break loop
-                } else if !unicode.is_control(ev.ch) {
-                    log.infof("key: {}", ev.ch)
-                } else {
-                    // ...
-                }
+        {
+            term.save_cursor()
+            defer term.restore_cursor()
+            defer term.set_foreground_color(.Default)
+
+            term.reset() // default style and color
+            term.set_cursor_position({0, 0})
+
+            for color in term.Color {
+                term.set_foreground_color(color, bright = false)
+                fmt.printf("[{}, normal] Current time: {}:{}:{}", color, time.clock(time.now()))
+                term.move_cursor_next_line()
+
+                term.set_foreground_color(color, bright = true)
+                fmt.printf("[{}, bright] Current time: {}:{}:{}", color, time.clock(time.now()))
+                term.move_cursor_next_line()
+            }
+
+            for style in term.Style {
+                term.set_style(style, true)
+
+                term.set_foreground_color(.Red, bright = true)
+                fmt.printf("[{}, bright] Terminal size: {}x{}", style, expand_values(term.size()))
+                term.move_cursor_next_line()
+
+                term.set_foreground_color(.Red, bright = false)
+                fmt.printf("[{}, normal] Terminal size: {}x{}", style, expand_values(term.size()))
+                term.move_cursor_next_line()
+
+                term.set_style(style, false)
             }
         }
 
-        cursor_pos := term.cursor_position()
-        defer term.set_cursor_position(cursor_pos)
-        defer term.set_foreground_color(.Default)
-
-        // TODO: Make zero oriented
-        term.set_cursor_position({0, 0})
-        fmt.printf("Current time: {}:{}:{}", time.clock(time.now()))
-        term.set_cursor_position({0, 1})
-        fmt.printf("Terminal size: {}x{}", expand_values(term.size()))
+        // Chew threw event queue.
+        for do switch ev in term.get_event() or_break {
+        case term.Size_Event:
+        // TODO: Reallocate screen dependant resources
+        case term.Mouse_Event:
+            term.save_cursor()
+            defer term.restore_cursor()
+            defer term.set_foreground_color(.Default)
+            term.erase_screen()
+            term.set_cursor_position(ev.position)
+            term.set_foreground_color(.Yellow)
+            fmt.print("X")
+        case term.Key_Event:
+            log.info(ev)
+            if ev.key == .Escape || ev.ch == 'q' {
+                break loop
+            } else if !unicode.is_control(ev.ch) {
+                // ...
+            } else {
+                // ...
+            }
+        }
     }
 }

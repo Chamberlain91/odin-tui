@@ -15,12 +15,6 @@ _initialize :: proc() {
 
     _enter_raw_mode()
 
-    enable_alternate_screen()
-    erase_screen()
-    reset_color()
-    set_cursor_position({0, 0})
-    enable_mouse()
-
     _enter_raw_mode :: proc() {
 
         posix.atexit(_exit_raw_mode)
@@ -61,7 +55,7 @@ _exit_raw_mode :: proc "c" () {
     enable_alternate_screen(false)
     enable_mouse(false)
     show_cursor(true)
-    reset_color()
+    reset()
 
     posix.tcsetattr(posix.STDIN_FILENO, .TCSANOW, &_original_term)
 

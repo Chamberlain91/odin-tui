@@ -7,11 +7,8 @@ import "core:c/libc"
 import "core:container/queue"
 import "core:log"
 import "core:os"
-import "core:strings"
 import win "core:sys/windows"
-import "core:unicode"
 import "core:unicode/utf16"
-import "core:unicode/utf8"
 
 prev_out_codepage: win.CODEPAGE
 prev_out_mode: win.DWORD
@@ -24,12 +21,6 @@ _raw_mode: bool
 _initialize :: proc() {
 
     _enter_raw_mode()
-
-    enable_alternate_screen()
-    erase_screen()
-    reset_color()
-    set_cursor_position({0, 0})
-    enable_mouse()
 
     _enter_raw_mode :: proc() {
 
@@ -87,7 +78,7 @@ _exit_raw_mode :: proc "c" () {
     enable_alternate_screen(false)
     enable_mouse(false)
     show_cursor(true)
-    reset_color()
+    reset()
 
     win.SetConsoleMode(win.HANDLE(os.stdout), prev_out_mode)
     win.SetConsoleOutputCP(prev_out_codepage)
