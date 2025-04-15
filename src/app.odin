@@ -1,6 +1,7 @@
 package app
 
 @(require) import "core:fmt"
+import "core:log"
 import "core:os"
 import "core:time"
 import "core:unicode"
@@ -8,11 +9,7 @@ import "term"
 
 main :: proc() {
 
-    when ODIN_DEBUG {
-        context.allocator = term.create_scoped_tracking_allocator()
-        context.temp_allocator = term.create_scoped_tracking_allocator(context.temp_allocator)
-    }
-    context.logger = term.create_scoped_logger()
+    context = term.scoped_standard_context()
 
     // This application is useless unless ran interactively.
     if !term.is_interactive() {

@@ -20,7 +20,7 @@ initialize :: proc() {
 
 shutdown :: proc() {
 
-    // Consume all pending input
+    // Consume all pending input.
     // This prevents extra data (e.g. mouse input) from leaking.
     for _has_stdin_input() {
         _read_stdin()
@@ -29,6 +29,7 @@ shutdown :: proc() {
     _shutdown()
 
     queue.destroy(&_events)
+    queue.destroy(&_input)
 }
 
 // Determines if the terminal is considered interactive.

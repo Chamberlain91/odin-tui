@@ -5,55 +5,49 @@ import "core:log"
 import "core:mem"
 import "core:mem/virtual"
 
-@(require_results, deferred_out = destroy_tracking_allocator)
-create_scoped_tracking_allocator :: proc(backing_allocator := context.allocator) -> runtime.Allocator {
-    return create_tracking_allocator(backing_allocator)
-}
-
-create_tracking_allocator :: proc(backing_allocator := context.allocator) -> runtime.Allocator {
-
+@(private)
+create_tracking_allocator :: proc(backing_allocator: runtime.Allocator) -> runtime.Allocator {
     track := new(mem.Tracking_Allocator)
-
-    mem.tracking_allocator_init(track, context.allocator)
+    mem.tracking_allocator_init(track, backing_allocator)
     return mem.tracking_allocator(track)
 }
 
-destroy_tracking_allocator :: proc(tracking_allocator := context.allocator) {
+@(private)
+destroy_tracking_allocator :: proc(tracking_allocator: runtime.Allocator, loc := #caller_location) {
 
     track := (^mem.Tracking_Allocator)(tracking_allocator.data)
     defer free(track)
     defer mem.tracking_allocator_destroy(track)
 
-    // Display tracking information.
-    print_tracking_allocator_info(tracking_allocator)
+    report_tracking_allocator(track, loc)
+}
+
+@(private)
+report_tracking_allocator :: proc(track: ^mem.Tracking_Allocator, loc: runtime.Source_Code_Location) {
+
+    // Report tracking information.
+    log.debug("== Allocations ==", location = loc)
+    log.debugf("current: {:#.1M}", track.current_memory_allocated, location = loc)
+    log.debugf("total:   {:#.1M}", track.total_memory_allocated, location = loc)
+    log.debugf("peak:    {:#.1M}", track.peak_memory_allocated, location = loc)
 
     if n := len(track.allocation_map); n > 0 {
-        log.warnf("== {} allocations not freed ==", n)
+        log.warnf("== {} allocations not freed ==", n, location = loc)
         for _, entry in track.allocation_map {
-            log.warnf("- {} bytes @ {}", entry.size, entry.location)
+            log.warnf("- {} bytes @ {}", entry.size, entry.location, location = loc)
         }
     }
 
     if n := len(track.bad_free_array); n > 0 {
-        log.errorf("== {} bad frees ==", n)
+        log.errorf("== {} bad frees ==", n, location = loc)
         for entry in track.bad_free_array {
-            log.errorf("- {} @ {}", entry.memory, entry.location)
+            log.errorf("- {} @ {}", entry.memory, entry.location, location = loc)
         }
     }
 }
 
-print_tracking_allocator_info :: proc(tracking_allocator := context.allocator) {
-
-    track := (^mem.Tracking_Allocator)(tracking_allocator.data)
-
-    log.debug("== Tracking Allocator ==")
-    log.debugf("current: {:#.1M}", track.current_memory_allocated)
-    log.debugf("total:   {:#.1M}", track.total_memory_allocated)
-    log.debugf("peak:    {:#.1M}", track.peak_memory_allocated)
-}
-
 // Creates an arena allocator with scope limited lifetime.
-@(require_results, deferred_out = delete_scoped_arena_allocator)
+@(require_results, deferred_out = destroy_scoped_areana_allocator)
 scoped_arena_allocator :: proc() -> runtime.Allocator {
 
     arena := new(virtual.Arena)
@@ -65,7 +59,7 @@ scoped_arena_allocator :: proc() -> runtime.Allocator {
 }
 
 @(private = "file")
-delete_scoped_arena_allocator :: proc(allocator: runtime.Allocator) {
+destroy_scoped_areana_allocator :: proc(allocator: runtime.Allocator) {
     arena := (^virtual.Arena)(allocator.data)
     virtual.arena_destroy(arena)
     free(arena)
