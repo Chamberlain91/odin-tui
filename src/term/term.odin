@@ -87,7 +87,7 @@ process_input :: proc() {
         }
         queue.append(&_events, ev)
 
-        os.write_byte(os.stdout, input_get(0))
+        os.write_rune(os.stdout, input_get(0))
         input_consume(1)
     }
 }
@@ -104,7 +104,7 @@ has_event :: proc() -> bool {
 // Gets the next event to process.
 get_event :: proc(loc := #caller_location) -> (Event, bool) {
     if has_event() {
-        return queue.pop_back(&_events, loc), true
+        return queue.pop_front(&_events, loc), true
     }
     return {}, false
 }
@@ -274,7 +274,7 @@ Modifiers :: bit_set[Modifier;u8]
 // -----------------------------------------------------------------------------
 
 @(private)
-_input: queue.Queue(byte)
+_input: queue.Queue(rune)
 
 @(private)
 _events: queue.Queue(Event)
@@ -291,7 +291,7 @@ input_available :: proc() -> int {
 }
 
 @(private)
-input_get :: proc(i: int, loc := #caller_location) -> byte {
+input_get :: proc(i: int, loc := #caller_location) -> rune {
 
     for i >= input_available() {
         log.warnf("Reading std because queue was too shallow ({}/{})", i, input_available())
@@ -313,16 +313,17 @@ input_starts_with :: proc(pattern: string) -> bool {
         return false
     }
 
-    @(static) buffer: [64]byte
-    for i in 0 ..< len(pattern) {
-        buffer[i] = input_get(i)
+    for c, i in pattern {
+        if input_get(i) != c {
+            return false
+        }
     }
 
-    return strings.starts_with(string(buffer[:len(pattern)]), pattern)
+    return true
 }
 
 @(private)
-input_index :: proc(offset: int, values: ..byte, look_ahead := 8, loc := #caller_location) -> int {
+input_index :: proc(offset: int, values: ..rune, look_ahead := 8, loc := #caller_location) -> int {
 
     for i in 0 ..< look_ahead {
         x := input_get(offset + i, loc)
@@ -336,10 +337,11 @@ input_index :: proc(offset: int, values: ..byte, look_ahead := 8, loc := #caller
 
 @(private)
 input_copy :: proc(buffer: []byte, offset: int, count: int, loc := #caller_location) -> []byte {
+    sb := strings.builder_from_bytes(buffer)
     for i in 0 ..< count {
-        buffer[i] = input_get(offset + i, loc)
+        strings.write_rune(&sb, input_get(offset + i, loc))
     }
-    return buffer[:count]
+    return buffer[:strings.builder_len(sb)]
 }
 
 // -----------------------------------------------------------------------------

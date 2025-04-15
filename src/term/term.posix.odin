@@ -96,7 +96,9 @@ _read_stdin :: proc() {
 
     n, err := os.read(os.stdin, buffer[:])
     if err == nil && n > 0 {
-        queue.append(&_input, ..buffer[:n])
+        for ch in string(buffer[:n]) {
+            queue.append(&_input, ch)
+        }
     }
 }
 

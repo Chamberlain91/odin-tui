@@ -46,8 +46,8 @@ main :: proc() {
             case term.Key_Event:
                 if ev.key == .Escape || ev.ch == 'q' {
                     break loop
-                } else if unicode.is_print(ev.ch) {
-                    // ...
+                } else if !unicode.is_control(ev.ch) {
+                    log.infof("key: {}", ev.ch)
                 } else {
                     // ...
                 }

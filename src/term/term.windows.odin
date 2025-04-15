@@ -7,8 +7,11 @@ import "core:c/libc"
 import "core:container/queue"
 import "core:log"
 import "core:os"
+import "core:strings"
 import win "core:sys/windows"
+import "core:unicode"
 import "core:unicode/utf16"
+import "core:unicode/utf8"
 
 prev_out_codepage: win.CODEPAGE
 prev_out_mode: win.DWORD
@@ -131,7 +134,9 @@ _read_stdin :: proc() {
     // Convert UTF16 input text into UTF8 text.
     input := buffer[:utf16.decode_to_utf8(buffer[:], wbuffer[:i])]
     if len(input) > 0 {
-        queue.append_elems(&_input, ..input)
+        for ch in string(input) {
+            queue.append(&_input, ch)
+        }
     }
 
     read_input_records :: proc() -> []win.INPUT_RECORD {
