@@ -24,6 +24,9 @@ _initialize :: proc() {
 
     _enter_raw_mode :: proc() {
 
+        _xterm_escape_alt_sequences(true)
+        _xterm_bracket_paste(true)
+
         // Try to ensure that the raw
         libc.atexit(_exit_raw_mode)
 
@@ -80,6 +83,9 @@ _exit_raw_mode :: proc "c" () {
     show_cursor(true)
     reset()
 
+    _xterm_escape_alt_sequences(false)
+    _xterm_bracket_paste(false)
+
     win.SetConsoleMode(win.HANDLE(os.stdout), prev_out_mode)
     win.SetConsoleOutputCP(prev_out_codepage)
 
@@ -126,6 +132,7 @@ _read_stdin :: proc() {
     input := buffer[:utf16.decode_to_utf8(buffer[:], wbuffer[:i])]
     if len(input) > 0 {
         for ch in string(input) {
+            if ch == 0 do continue // TODO: Makes life easier, but feels wrong
             queue.append(&_input, ch)
         }
     }

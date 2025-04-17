@@ -16,6 +16,7 @@ DEV_BUILD :: #config(DEV_BUILD, ODIN_DEBUG)
 // Initialize the library.
 initialize :: proc() {
     _initialize()
+    _init_mappings()
 }
 
 // Shutdown the library, attempting to restore prior terminal state.
@@ -64,6 +65,16 @@ show_cursor :: proc(visible := true) {
     fmt.print(visible ? "\e[?25h" : "\e[?25l")
 }
 
+@(private)
+_xterm_escape_alt_sequences :: proc(enable := true) {
+    fmt.print(enable ? "\e[?1036h" : "\e[?1036l")
+}
+
+@(private)
+_xterm_bracket_paste :: proc(enable := true) {
+    fmt.print(enable ? "\e[?2004h" : "\e[?2004l")
+}
+
 // Process any pending input and events.
 process_input :: proc() {
 
@@ -73,11 +84,12 @@ process_input :: proc() {
 
     _process_resize()
 
-    for input_available() > 0 {
+    input_loop: for input_available() > 0 {
 
         // Attempt to read various escape sequences.
         if _process_mouse_input() do continue // \e[<b;y;xM
         if _process_cursor_input() do continue // \e[y;xR
+        if _process_bracket_paste() do continue // \e[200~{text}\e[201~
 
         // Nothing more to do if we have consumed everything.
         if input_available() == 0 do break
@@ -85,28 +97,39 @@ process_input :: proc() {
         // TODO: How do we detect just pressing escape?
         // - Read somewhere they use a timer.
 
-        for mapping, key in _mappings {
-            if len(mapping.normal) == 0 do continue
-            if input_starts_with(mapping.normal) {
-                // Append key event to queue.
-                ev := Key_Event {
-                    key = key,
-                    ch  = '.',
+        for alternatives, key in _mappings {
+            if len(alternatives) == 0 do continue
+
+            for mapping in alternatives {
+
+                if input_starts_with(mapping.sequence) {
+                    // Append key event to queue.
+                    ev := Key_Event {
+                        key = key,
+                        str = mapping.sequence,
+                    }
+                    queue.append(&_events, ev)
+                    input_consume(len(mapping.sequence))
+                    continue input_loop
                 }
-                queue.append(&_events, ev)
-                input_consume(len(mapping.normal))
-                continue
             }
         }
 
+        // Unknown input key/input sequence, so append each rune?
+        // TODO: What do to here
+
+        @(static) buffer: [16]byte
+        sb := strings.builder_from_bytes(buffer[:])
+        strings.write_rune(&sb, input_get(0))
+
         // Append key event to queue.
         ev := Key_Event {
-            ch  = input_get(0),
             key = .Other,
+            str = strings.clone(strings.to_string(sb), context.temp_allocator),
         }
         queue.append(&_events, ev)
 
-        os.write_rune(os.stdout, input_get(0))
+        // os.write_rune(os.stdout, input_get(0))
         input_consume(1)
     }
 }
@@ -289,6 +312,7 @@ Event :: union {
     Mouse_Event,
     Size_Event,
     Key_Event,
+    Paste_Event,
 }
 
 Mouse_Event :: struct {
@@ -309,34 +333,125 @@ Mouse_Button :: enum {
 
 Key_Event :: struct {
     key: Key,
-    ch:  rune,
+    str: string,
 }
 
 Size_Event :: struct {
     size: [2]int,
 }
 
+Paste_Event :: struct {
+    text: string,
+}
+
+// !@#$%^&*()-_=+,<.>/?;:'"[{]}\|`~
 Key :: enum {
+    Other,
     Escape,
     Ctrl,
     Alt,
     Shift,
-    Backspace,
-    Return,
-    Tab,
-    Insert,
-    Delete,
-    Home,
-    End,
-    PageUp,
-    PageDown,
-    // A-Z
-    // 0-9
-    // !@#$%^&*()-_=+,<.>/?;:'"[{]}\|`~
-    Other,
     F1,
     F2,
     F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+    Num_UpArrow,
+    Num_DownArrow,
+    Num_LeftArrow,
+    Num_RightArrow,
+    Num_PageUp,
+    Num_PageDown,
+    Num_Home,
+    Num_End,
+    Num_Insert,
+    Num_Delete,
+    Num_Enter,
+    Num_Slash,
+    Num_Star,
+    Num_Minus,
+    Num_Add,
+    Num_1,
+    Num_2,
+    Num_3,
+    Num_4,
+    Num_5,
+    Num_6,
+    Num_7,
+    Num_8,
+    Num_9,
+    Num_0,
+    UpArrow,
+    DownArrow,
+    LeftArrow,
+    RightArrow,
+    PageUp,
+    PageDown,
+    Home,
+    End,
+    Insert,
+    Backspace,
+    Delete,
+    PrintScreen,
+    PauseBreak,
+    Enter,
+    Tab,
+    Null,
+    Minus,
+    Equals,
+    OpenBracket,
+    CloseBracket,
+    Space,
+    Semicolon,
+    Quote,
+    Comma,
+    Period,
+    Slash,
+    Backtick,
+    Backslash,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    D1,
+    D2,
+    D3,
+    D4,
+    D5,
+    D6,
+    D7,
+    D8,
+    D9,
+    D0,
 }
 
 Modifier :: enum u8 {
@@ -348,18 +463,46 @@ Modifier :: enum u8 {
 Modifiers :: bit_set[Modifier;u8]
 
 @(private)
-Key_Mapping :: struct {
-    normal: string,
-    shift:  string,
-    ctrl:   string,
-    alt:    string,
+Key_Sequence :: struct {
+    sequence:  string,
+    modifiers: Modifiers,
 }
 
 @(private)
+Key_Mapping :: []Key_Sequence
+
+@(private)
 _mappings: [Key]Key_Mapping = #partial {
-    .F1 = {"0;59", "0;84", "0;94", "0;104"},
-    .F2 = {"0;60", "0;85", "0;95", "0;105"},
-    .F3 = {"0;61", "0;86", "0;96", "0;106"},
+    .Home = {_key_sequence("\e[1~", {})}, // norm shift ctrl alt
+}
+
+@(private)
+_init_mappings :: proc() {
+
+    for c in 'a' ..= 'z' {
+        key := cast(Key)(int(Key.A) + int(c - 'a'))
+
+        options: [dynamic]Key_Sequence
+        append(&options, _key_sequence(fmt.aprintf("{}", c), {}))
+        append(&options, _key_sequence(fmt.aprintf("{}", c - 0x20), {.Shift}))
+        append(&options, _key_sequence(fmt.aprintf("{}", c - 0x60), {.Ctrl}))
+        append(&options, _key_sequence(fmt.aprintf("\e{}", c), {.Alt}))
+        append(&options, _key_sequence(fmt.aprintf("\e{}", c - 0x60), {.Ctrl, .Alt}))
+        append(&options, _key_sequence(fmt.aprintf("\e{}", c - 0x20), {.Shift, .Alt}))
+
+        _mappings[key] = options[:]
+    }
+
+    // TODO: How/when to clean up the allocations
+}
+
+@(private)
+_key_sequence :: proc(sequence: string, modifiers: Modifiers) -> Key_Sequence {
+    key := Key_Sequence {
+        sequence  = sequence,
+        modifiers = modifiers,
+    }
+    return key
 }
 
 // -----------------------------------------------------------------------------
@@ -398,14 +541,14 @@ input_consume :: proc(n: int, loc := #caller_location) {
 }
 
 @(private)
-input_starts_with :: proc(pattern: string) -> bool {
+input_starts_with :: proc(pattern: string, offset := 0) -> bool {
 
     if input_available() < len(pattern) {
         return false
     }
 
     for c, i in pattern {
-        if input_get(i) != c {
+        if input_get(offset + i) != c {
             return false
         }
     }
@@ -436,6 +579,71 @@ input_copy :: proc(buffer: []byte, offset: int, count: int, loc := #caller_locat
 }
 
 // -----------------------------------------------------------------------------
+
+@(private)
+_process_resize :: proc() {
+
+    if size() == _state.size do return
+    _state.size = size()
+
+    ev := Size_Event {
+        size = size(),
+    }
+    queue.append(&_events, ev)
+}
+
+@(private)
+_process_bracket_paste :: proc() -> (ok: bool) {
+
+    // Attempt to decode bracketed paste.
+    text := decode_bracket_paste() or_return
+
+    ev := Paste_Event {
+        text = text,
+    }
+    queue.append(&_events, ev)
+
+    ok = true
+    return
+
+    decode_bracket_paste :: proc() -> (text: string, ok: bool) {
+
+        UPPER_LIMIT :: cast(int)max(u16)
+
+        @(static) buffer: [16]byte
+
+        // \e[200~{content}\e[201~
+
+        BEGIN :: "\e[200~"
+        END :: "\e[201~"
+
+        // Ensure the input looks like bracket paste.
+        if !input_starts_with(BEGIN) do return
+
+        i := len(BEGIN)
+
+        // Scan paste until END is found.
+        for i < UPPER_LIMIT {
+            for _has_stdin_input() do _read_stdin()
+            if input_starts_with(END, offset = i) {
+                break
+            }
+            i += 1
+        }
+
+        // Copy scanned paste into new allocation.
+        sb := strings.builder_make(allocator = context.temp_allocator)
+        for m in len(BEGIN) ..< i {
+            strings.write_rune(&sb, input_get(m))
+        }
+        text = strings.to_string(sb)
+
+        input_consume(i + len(END))
+
+        ok = true
+        return
+    }
+}
 
 @(private)
 _process_cursor_input :: proc() -> (ok: bool) {
@@ -482,18 +690,6 @@ _process_cursor_input :: proc() -> (ok: bool) {
         ok = true
         return
     }
-}
-
-@(private)
-_process_resize :: proc() {
-
-    if size() == _state.size do return
-    _state.size = size()
-
-    ev := Size_Event {
-        size = size(),
-    }
-    queue.append(&_events, ev)
 }
 
 @(private)

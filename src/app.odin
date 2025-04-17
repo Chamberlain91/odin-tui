@@ -6,6 +6,7 @@ import "core:os"
 import "core:time"
 import "core:unicode"
 import "term"
+import "term/tui"
 
 main :: proc() {
 
@@ -22,6 +23,44 @@ main :: proc() {
 
     term.enable_alternate_screen()
     term.enable_mouse()
+
+    snake_game()
+}
+
+snake_game :: proc() {
+
+    canvas: tui.Canvas
+
+    term.set_cursor_position({0, 0})
+
+    loop: for true {
+
+        // Handle events for this iteration.
+        term.process_input()
+
+        defer free_all(context.temp_allocator)
+        defer time.sleep(time.Millisecond)
+
+        for do switch ev in term.get_event() or_break {
+        case term.Size_Event:
+            tui.canvas_resize(&canvas, ev.size)
+            fmt.print(ev)
+            term.move_cursor_next_line()
+        case term.Paste_Event:
+            fmt.print(ev)
+            term.move_cursor_next_line()
+        case term.Mouse_Event:
+            fmt.print(ev)
+            term.move_cursor_next_line()
+        case term.Key_Event:
+            if ev.key == .Escape || ev.key == .Q || ev.str == "q" do break loop
+            fmt.print(ev)
+            term.move_cursor_next_line()
+        }
+    }
+}
+
+whatever :: proc() {
 
     loop: for true {
 
@@ -67,9 +106,7 @@ main :: proc() {
         }
 
         // Chew threw event queue.
-        for do switch ev in term.get_event() or_break {
-        case term.Size_Event:
-        // TODO: Reallocate screen dependant resources
+        for do #partial switch ev in term.get_event() or_break {
         case term.Mouse_Event:
             term.save_cursor()
             defer term.restore_cursor()
@@ -80,12 +117,8 @@ main :: proc() {
             fmt.print("X")
         case term.Key_Event:
             log.info(ev)
-            if ev.key == .Escape || ev.ch == 'q' {
+            if ev.key == .Escape || ev.str == "q" {
                 break loop
-            } else if !unicode.is_control(ev.ch) {
-                // ...
-            } else {
-                // ...
             }
         }
     }
