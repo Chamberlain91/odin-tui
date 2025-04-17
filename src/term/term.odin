@@ -6,6 +6,9 @@ import "core:log"
 import "core:os"
 import "core:strconv"
 import "core:strings"
+import "core:time"
+import "core:unicode"
+import "core:unicode/utf8"
 
 DEV_BUILD :: #config(DEV_BUILD, ODIN_DEBUG)
 
@@ -86,6 +89,10 @@ process_input :: proc() {
 
     input_loop: for input_available() > 0 {
 
+        for _has_stdin_input() {
+            _read_stdin()
+        }
+
         // Attempt to read various escape sequences.
         if _process_mouse_input() do continue // \e[<b;y;xM
         if _process_cursor_input() do continue // \e[y;xR
@@ -97,39 +104,71 @@ process_input :: proc() {
         // TODO: How do we detect just pressing escape?
         // - Read somewhere they use a timer.
 
+        if _potential_escape_key {
+            _potential_escape_key = false
+
+            // Append escape key to event queue.
+            ev := Key_Event {
+                key       = .Escape,
+                modifiers = {},
+                str       = "\e",
+            }
+            queue.append(&_events, ev)
+            input_consume(1)
+
+            continue input_loop
+        }
+
+        potential_escape := false
+
         for alternatives, key in _mappings {
             if len(alternatives) == 0 do continue
 
             for mapping in alternatives {
 
                 if input_starts_with(mapping.sequence) {
-                    // Append key event to queue.
-                    ev := Key_Event {
-                        key = key,
-                        str = mapping.sequence,
+
+                    if key == .Escape {
+                        potential_escape = true
+                    } else {
+                        // Append key event to queue.
+                        ev := Key_Event {
+                            key       = key,
+                            modifiers = mapping.modifiers,
+                            str       = mapping.sequence,
+                        }
+                        queue.append(&_events, ev)
+                        input_consume(len(mapping.sequence))
+                        continue input_loop
                     }
-                    queue.append(&_events, ev)
-                    input_consume(len(mapping.sequence))
-                    continue input_loop
                 }
             }
+        }
+
+        if potential_escape {
+            _potential_escape_key = true
+            continue input_loop
         }
 
         // Unknown input key/input sequence, so append each rune?
         // TODO: What do to here
 
         @(static) buffer: [16]byte
-        sb := strings.builder_from_bytes(buffer[:])
-        strings.write_rune(&sb, input_get(0))
+        if utf8.rune_size(input_get(0)) > 0 {
+            sb := strings.builder_make_len_cap(0, utf8.rune_size(input_get(0)), context.temp_allocator)
+            strings.write_rune(&sb, input_get(0))
 
-        // Append key event to queue.
-        ev := Key_Event {
-            key = .Other,
-            str = strings.clone(strings.to_string(sb), context.temp_allocator),
+            // Append key event to queue.
+            ev := Key_Event {
+                key       = .Unknown,
+                modifiers = {},
+                str       = strings.to_string(sb),
+            }
+            queue.append(&_events, ev)
         }
-        queue.append(&_events, ev)
 
-        // os.write_rune(os.stdout, input_get(0))
+        log.infof("unknown input: '{}' ({:x})", input_get(0), int(input_get(0)))
+
         input_consume(1)
     }
 }
@@ -280,6 +319,10 @@ reset :: proc() {
     fmt.print("\e[0m")
 }
 
+is_key :: proc(ev: Key_Event, key: Key, modifiers: Modifiers = {}) -> bool {
+    return ev.key == key && ev.modifiers == modifiers
+}
+
 INVALID_CURSOR_POSITION :: [2]int{-1, -1}
 
 // TODO: 256 color?
@@ -332,8 +375,9 @@ Mouse_Button :: enum {
 }
 
 Key_Event :: struct {
-    key: Key,
-    str: string,
+    key:       Key,
+    modifiers: Modifiers,
+    str:       string,
 }
 
 Size_Event :: struct {
@@ -346,7 +390,9 @@ Paste_Event :: struct {
 
 // !@#$%^&*()-_=+,<.>/?;:'"[{]}\|`~
 Key :: enum {
-    Other,
+    // Some unknown key producing input.
+    Unknown,
+    // TODO: vvv
     Escape,
     Ctrl,
     Alt,
@@ -378,6 +424,7 @@ Key :: enum {
     Num_Star,
     Num_Minus,
     Num_Add,
+    Num_0,
     Num_1,
     Num_2,
     Num_3,
@@ -387,7 +434,6 @@ Key :: enum {
     Num_7,
     Num_8,
     Num_9,
-    Num_0,
     UpArrow,
     DownArrow,
     LeftArrow,
@@ -403,7 +449,6 @@ Key :: enum {
     PauseBreak,
     Enter,
     Tab,
-    Null,
     Minus,
     Equals,
     OpenBracket,
@@ -416,6 +461,7 @@ Key :: enum {
     Slash,
     Backtick,
     Backslash,
+    // TODO: ^^^
     A,
     B,
     C,
@@ -442,6 +488,8 @@ Key :: enum {
     X,
     Y,
     Z,
+    // TODO: vvv
+    D0,
     D1,
     D2,
     D3,
@@ -451,7 +499,7 @@ Key :: enum {
     D7,
     D8,
     D9,
-    D0,
+    // TODO: ^^^
 }
 
 Modifier :: enum u8 {
@@ -473,7 +521,8 @@ Key_Mapping :: []Key_Sequence
 
 @(private)
 _mappings: [Key]Key_Mapping = #partial {
-    .Home = {_key_sequence("\e[1~", {})}, // norm shift ctrl alt
+    .Escape = {_key_sequence("\e")},
+    .Home   = {_key_sequence("\e[1~")},
 }
 
 @(private)
@@ -481,9 +530,10 @@ _init_mappings :: proc() {
 
     for c in 'a' ..= 'z' {
         key := cast(Key)(int(Key.A) + int(c - 'a'))
+        log.warnf("adding mapping {}", key)
 
         options: [dynamic]Key_Sequence
-        append(&options, _key_sequence(fmt.aprintf("{}", c), {}))
+        append(&options, _key_sequence(fmt.aprintf("{}", c)))
         append(&options, _key_sequence(fmt.aprintf("{}", c - 0x20), {.Shift}))
         append(&options, _key_sequence(fmt.aprintf("{}", c - 0x60), {.Ctrl}))
         append(&options, _key_sequence(fmt.aprintf("\e{}", c), {.Alt}))
@@ -493,11 +543,23 @@ _init_mappings :: proc() {
         _mappings[key] = options[:]
     }
 
+    for c in '0' ..= '9' {
+        key := cast(Key)(int(Key.D0) + int(c - '0'))
+        log.warnf("adding mapping {}", key)
+
+        options: [dynamic]Key_Sequence
+        append(&options, _key_sequence(fmt.aprintf("{}", c)))
+        append(&options, _key_sequence(fmt.aprintf("{}", c - 0x20), {.Shift}))
+        append(&options, _key_sequence(fmt.aprintf("\e{}", c), {.Alt}))
+
+        _mappings[key] = options[:]
+    }
+
     // TODO: How/when to clean up the allocations
 }
 
 @(private)
-_key_sequence :: proc(sequence: string, modifiers: Modifiers) -> Key_Sequence {
+_key_sequence :: proc(sequence: string, modifiers: Modifiers = {}) -> Key_Sequence {
     key := Key_Sequence {
         sequence  = sequence,
         modifiers = modifiers,
@@ -506,6 +568,9 @@ _key_sequence :: proc(sequence: string, modifiers: Modifiers) -> Key_Sequence {
 }
 
 // -----------------------------------------------------------------------------
+
+@(private = "file")
+_potential_escape_key: bool
 
 @(private)
 _input: queue.Queue(rune)

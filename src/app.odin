@@ -44,8 +44,6 @@ snake_game :: proc() {
         for do switch ev in term.get_event() or_break {
         case term.Size_Event:
             tui.canvas_resize(&canvas, ev.size)
-            fmt.print(ev)
-            term.move_cursor_next_line()
         case term.Paste_Event:
             fmt.print(ev)
             term.move_cursor_next_line()
@@ -53,7 +51,7 @@ snake_game :: proc() {
             fmt.print(ev)
             term.move_cursor_next_line()
         case term.Key_Event:
-            if ev.key == .Escape || ev.key == .Q || ev.str == "q" do break loop
+            if term.is_key(ev, .Q) || term.is_key(ev, .Escape) do break loop
             fmt.print(ev)
             term.move_cursor_next_line()
         }
