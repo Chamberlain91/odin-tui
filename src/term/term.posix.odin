@@ -59,7 +59,7 @@ _exit_raw_mode :: proc "c" () {
     enable_alternate_screen(false)
     enable_mouse(false)
     show_cursor(true)
-    reset()
+    reset_styles()
 
     _xterm_escape_alt_sequences(false)
     _xterm_bracket_paste(false)

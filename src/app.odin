@@ -4,7 +4,6 @@ package app
 import "core:log"
 import "core:os"
 import "core:time"
-import "core:unicode"
 import "term"
 import "term/tui"
 
@@ -51,7 +50,7 @@ snake_game :: proc() {
             fmt.print(ev)
             term.move_cursor_next_line()
         case term.Key_Event:
-            if term.is_key(ev, .Q) || term.is_key(ev, .Escape) do break loop
+            if ev.str == "q" do break loop
             fmt.print(ev)
             term.move_cursor_next_line()
         }
@@ -75,7 +74,7 @@ whatever :: proc() {
             defer term.restore_cursor()
             defer term.set_foreground_color(.Default)
 
-            term.reset() // default style and color
+            term.reset_styles() // default style and color
             term.set_cursor_position({0, 0})
 
             for color in term.Color {

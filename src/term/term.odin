@@ -4,6 +4,7 @@ import "core:container/queue"
 import "core:fmt"
 import "core:log"
 import "core:os"
+import "core:slice"
 import "core:strconv"
 import "core:strings"
 import "core:time"
@@ -31,6 +32,7 @@ shutdown :: proc() {
         _read_stdin()
     }
 
+    _free_mappings()
     _shutdown()
 
     queue.destroy(&_events)
@@ -315,12 +317,8 @@ set_style :: proc(style: Style, enable: bool) {
     }
 }
 
-reset :: proc() {
+reset_styles :: proc() {
     fmt.print("\e[0m")
-}
-
-is_key :: proc(ev: Key_Event, key: Key, modifiers: Modifiers = {}) -> bool {
-    return ev.key == key && ev.modifiers == modifiers
 }
 
 INVALID_CURSOR_POSITION :: [2]int{-1, -1}
@@ -388,15 +386,22 @@ Paste_Event :: struct {
     text: string,
 }
 
-// !@#$%^&*()-_=+,<.>/?;:'"[{]}\|`~
 Key :: enum {
-    // Some unknown key producing input.
     Unknown,
-    // TODO: vvv
+    Character,
+    Backspace,
+    Enter,
     Escape,
-    Ctrl,
-    Alt,
-    Shift,
+    UpArrow,
+    DownArrow,
+    LeftArrow,
+    RightArrow,
+    PageUp,
+    PageDown,
+    Home,
+    End,
+    Insert,
+    Delete,
     F1,
     F2,
     F3,
@@ -409,6 +414,11 @@ Key :: enum {
     F10,
     F11,
     F12,
+    Tab,
+    Null,
+    // TODO: vvv
+    PrintScreen,
+    PauseBreak,
     Num_UpArrow,
     Num_DownArrow,
     Num_LeftArrow,
@@ -434,72 +444,6 @@ Key :: enum {
     Num_7,
     Num_8,
     Num_9,
-    UpArrow,
-    DownArrow,
-    LeftArrow,
-    RightArrow,
-    PageUp,
-    PageDown,
-    Home,
-    End,
-    Insert,
-    Backspace,
-    Delete,
-    PrintScreen,
-    PauseBreak,
-    Enter,
-    Tab,
-    Minus,
-    Equals,
-    OpenBracket,
-    CloseBracket,
-    Space,
-    Semicolon,
-    Quote,
-    Comma,
-    Period,
-    Slash,
-    Backtick,
-    Backslash,
-    // TODO: ^^^
-    A,
-    B,
-    C,
-    D,
-    E,
-    F,
-    G,
-    H,
-    I,
-    J,
-    K,
-    L,
-    M,
-    N,
-    O,
-    P,
-    Q,
-    R,
-    S,
-    T,
-    U,
-    V,
-    W,
-    X,
-    Y,
-    Z,
-    // TODO: vvv
-    D0,
-    D1,
-    D2,
-    D3,
-    D4,
-    D5,
-    D6,
-    D7,
-    D8,
-    D9,
-    // TODO: ^^^
 }
 
 Modifier :: enum u8 {
@@ -520,51 +464,101 @@ Key_Sequence :: struct {
 Key_Mapping :: []Key_Sequence
 
 @(private)
-_mappings: [Key]Key_Mapping = #partial {
-    .Escape = {_key_sequence("\e")},
-    .Home   = {_key_sequence("\e[1~")},
-}
+_mappings: [Key]Key_Mapping
 
 @(private)
 _init_mappings :: proc() {
 
-    for c in 'a' ..= 'z' {
-        key := cast(Key)(int(Key.A) + int(c - 'a'))
-        log.warnf("adding mapping {}", key)
+    // TODO: Finish all mappings
 
-        options: [dynamic]Key_Sequence
-        append(&options, _key_sequence(fmt.aprintf("{}", c)))
-        append(&options, _key_sequence(fmt.aprintf("{}", c - 0x20), {.Shift}))
-        append(&options, _key_sequence(fmt.aprintf("{}", c - 0x60), {.Ctrl}))
-        append(&options, _key_sequence(fmt.aprintf("\e{}", c), {.Alt}))
-        append(&options, _key_sequence(fmt.aprintf("\e{}", c - 0x60), {.Ctrl, .Alt}))
-        append(&options, _key_sequence(fmt.aprintf("\e{}", c - 0x20), {.Shift, .Alt}))
-
-        _mappings[key] = options[:]
+    _mappings = #partial {
+        .Escape     = make_mapping({strings.clone("\e"), {}}),
+        .F1         = make_lower_fN_mapping('P'),
+        .F2         = make_lower_fN_mapping('Q'),
+        .F3         = make_lower_fN_mapping('R'),
+        .F4         = make_lower_fN_mapping('S'),
+        .F5         = make_fN_mapping(15),
+        .F6         = make_fN_mapping(17),
+        .F7         = make_fN_mapping(18),
+        .F8         = make_fN_mapping(19),
+        .F9         = make_fN_mapping(20),
+        .F10        = make_fN_mapping(21),
+        .F11        = make_fN_mapping(23),
+        .F12        = make_fN_mapping(24),
+        .Backspace  = make_mapping(
+            {strings.clone("\x7f"), {}},
+            {strings.clone("\b"), {.Ctrl}},
+            {strings.clone("\e\b"), {.Alt, .Ctrl}},
+            {strings.clone("\e\x7f"), {.Alt}},
+        ),
+        .Enter      = make_mapping({strings.clone("\r"), {}}),
+        .UpArrow    = make_lower_arrow_mapping('A'),
+        .DownArrow  = make_lower_arrow_mapping('B'),
+        .RightArrow = make_lower_arrow_mapping('C'),
+        .LeftArrow  = make_lower_arrow_mapping('D'),
+        .PageUp     = make_fN_mapping(5),
+        .PageDown   = make_fN_mapping(6),
+        .Home       = make_lower_arrow_mapping('H'),
+        .End        = make_lower_arrow_mapping('F'),
+        .Insert     = make_fN_mapping(2),
+        .Delete     = make_fN_mapping(3),
+        .Tab        = make_mapping({strings.clone("\t"), {}}, {strings.clone("\e[Z"), {.Shift}}),
+        .Null       = make_mapping({strings.clone("\x00"), {}}),
     }
 
-    for c in '0' ..= '9' {
-        key := cast(Key)(int(Key.D0) + int(c - '0'))
-        log.warnf("adding mapping {}", key)
-
-        options: [dynamic]Key_Sequence
-        append(&options, _key_sequence(fmt.aprintf("{}", c)))
-        append(&options, _key_sequence(fmt.aprintf("{}", c - 0x20), {.Shift}))
-        append(&options, _key_sequence(fmt.aprintf("\e{}", c), {.Alt}))
-
-        _mappings[key] = options[:]
+    make_mapping :: proc(sequences: ..Key_Sequence) -> []Key_Sequence {
+        return slice.clone(sequences)
     }
 
-    // TODO: How/when to clean up the allocations
+    make_lower_arrow_mapping :: proc(n: rune) -> []Key_Sequence {
+
+        options: [dynamic]Key_Sequence
+        append(&options, Key_Sequence{fmt.aprintf("\e[{}", n), {}})
+
+        for i_mods in 2 ..= 8 {
+            k := cast(u8)i_mods - 1
+            mods: Modifiers = transmute(Modifiers)k
+            append(&options, Key_Sequence{fmt.aprintf("\e[1;{}{}", k, n), mods})
+        }
+
+        return options[:]
+    }
+
+    make_lower_fN_mapping :: proc(n: rune) -> []Key_Sequence {
+
+        options: [dynamic]Key_Sequence
+        append(&options, Key_Sequence{fmt.aprintf("\eO{}", n), {}})
+
+        for i in 2 ..= 8 {
+            mods: Modifiers = transmute(Modifiers)cast(u8)i
+            append(&options, Key_Sequence{fmt.aprintf("\e[1;{}{}", i, n), mods})
+        }
+
+        return options[:]
+    }
+
+    make_fN_mapping :: proc(n: int) -> []Key_Sequence {
+
+        options: [dynamic]Key_Sequence
+        append(&options, Key_Sequence{fmt.aprintf("\e[{}~", n), {}})
+
+        for i in 2 ..= 8 {
+            mods: Modifiers = transmute(Modifiers)cast(u8)i
+            append(&options, Key_Sequence{fmt.aprintf("\e[{};{}~", n, i), mods})
+        }
+
+        return options[:]
+    }
 }
 
 @(private)
-_key_sequence :: proc(sequence: string, modifiers: Modifiers = {}) -> Key_Sequence {
-    key := Key_Sequence {
-        sequence  = sequence,
-        modifiers = modifiers,
+_free_mappings :: proc() {
+    for mapping in _mappings {
+        for alternative in mapping {
+            delete(alternative.sequence)
+        }
+        delete(mapping)
     }
-    return key
 }
 
 // -----------------------------------------------------------------------------
@@ -593,7 +587,7 @@ input_available :: proc() -> int {
 input_get :: proc(i: int, loc := #caller_location) -> rune {
 
     for i >= input_available() {
-        log.warnf("Reading std because queue was too shallow ({}/{})", i, input_available())
+        log.warnf("Reading std because queue was too shallow ({}/{})", i, input_available(), location = loc)
         _read_stdin()
     }
 
@@ -606,14 +600,14 @@ input_consume :: proc(n: int, loc := #caller_location) {
 }
 
 @(private)
-input_starts_with :: proc(pattern: string, offset := 0) -> bool {
+input_starts_with :: proc(pattern: string, offset := 0, loc := #caller_location) -> bool {
 
     if input_available() < len(pattern) {
         return false
     }
 
     for c, i in pattern {
-        if input_get(offset + i) != c {
+        if input_get(offset + i, loc) != c {
             return false
         }
     }
@@ -625,6 +619,7 @@ input_starts_with :: proc(pattern: string, offset := 0) -> bool {
 input_index :: proc(offset: int, values: ..rune, look_ahead := 8, loc := #caller_location) -> int {
 
     for i in 0 ..< look_ahead {
+        if (offset + i) >= input_available() do break
         x := input_get(offset + i, loc)
         for v in values {
             if x == v do return offset + i

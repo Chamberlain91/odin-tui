@@ -81,7 +81,7 @@ _exit_raw_mode :: proc "c" () {
     enable_alternate_screen(false)
     enable_mouse(false)
     show_cursor(true)
-    reset()
+    reset_styles()
 
     _xterm_escape_alt_sequences(false)
     _xterm_bracket_paste(false)
@@ -132,7 +132,6 @@ _read_stdin :: proc() {
     input := buffer[:utf16.decode_to_utf8(buffer[:], wbuffer[:i])]
     if len(input) > 0 {
         for ch in string(input) {
-            if ch == 0 do continue // TODO: Makes life easier, but feels wrong
             queue.append(&_input, ch)
         }
     }
