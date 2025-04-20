@@ -3,11 +3,9 @@ package term
 import "core:container/queue"
 import "core:fmt"
 import "core:log"
-import "core:os"
 import "core:slice"
 import "core:strconv"
 import "core:strings"
-import "core:time"
 import "core:unicode"
 import "core:unicode/utf8"
 
@@ -78,6 +76,11 @@ _xterm_escape_alt_sequences :: proc(enable := true) {
 @(private)
 _xterm_bracket_paste :: proc(enable := true) {
     fmt.print(enable ? "\e[?2004h" : "\e[?2004l")
+}
+
+@(private)
+_xterm_alternate_keymap :: proc(enable := true) {
+    fmt.print(enable ? "\e[?1h\e=" : "\e[?1l\e>")
 }
 
 // Process any pending input and events.
@@ -162,9 +165,24 @@ process_input :: proc() {
 
             // Append key event to queue.
             ev := Key_Event {
-                key       = .Unknown,
+                key       = .Character,
                 modifiers = {},
                 str       = strings.to_string(sb),
+            }
+            if unicode.is_control(input_get(0)) {
+                // Not a character key
+                ev.key = .Unknown
+                // TODO: Might be better to have `is_control(ev, .EOF)` so we could alias real and common names?
+                switch input_get(0) {
+                case '\x1c':
+                    ev.control = .Sig_Quit // Ctrl+\
+                case '\x03':
+                    ev.control = .Sig_Interrupt // Ctrl+C
+                case '\x1a':
+                    ev.control = .Sig_Stop // Ctrl+Z
+                case '\x04':
+                    ev.control = .EOF // Ctrl+D
+                }
             }
             queue.append(&_events, ev)
         }
@@ -376,6 +394,7 @@ Key_Event :: struct {
     key:       Key,
     modifiers: Modifiers,
     str:       string,
+    control:   Control,
 }
 
 Size_Event :: struct {
@@ -389,6 +408,7 @@ Paste_Event :: struct {
 Key :: enum {
     Unknown,
     Character,
+    Control,
     Backspace,
     Enter,
     Escape,
@@ -419,31 +439,6 @@ Key :: enum {
     // TODO: vvv
     PrintScreen,
     PauseBreak,
-    Num_UpArrow,
-    Num_DownArrow,
-    Num_LeftArrow,
-    Num_RightArrow,
-    Num_PageUp,
-    Num_PageDown,
-    Num_Home,
-    Num_End,
-    Num_Insert,
-    Num_Delete,
-    Num_Enter,
-    Num_Slash,
-    Num_Star,
-    Num_Minus,
-    Num_Add,
-    Num_0,
-    Num_1,
-    Num_2,
-    Num_3,
-    Num_4,
-    Num_5,
-    Num_6,
-    Num_7,
-    Num_8,
-    Num_9,
 }
 
 Modifier :: enum u8 {
@@ -460,6 +455,19 @@ Key_Sequence :: struct {
     modifiers: Modifiers,
 }
 
+Control :: enum {
+    // Not a special control sequence.
+    None,
+    // Ctrl+\ (SIGQUIT)
+    Sig_Quit,
+    // Ctrl+C (SIGINT)
+    Sig_Interrupt,
+    // Ctrl+Z (SIGSTOP)
+    Sig_Stop,
+    // Ctrl+D (EOF)
+    EOF,
+}
+
 @(private)
 Key_Mapping :: []Key_Sequence
 
@@ -470,6 +478,8 @@ _mappings: [Key]Key_Mapping
 _init_mappings :: proc() {
 
     // TODO: Finish all mappings
+    // TODO: '\e[' apparently can mean "optional numeric" so maybe there's a better 
+    //       escape sequence parsing implementation to consider.
 
     _mappings = #partial {
         .Escape     = make_mapping({strings.clone("\e"), {}}),
@@ -486,22 +496,23 @@ _init_mappings :: proc() {
         .F11        = make_fN_mapping(23),
         .F12        = make_fN_mapping(24),
         .Backspace  = make_mapping(
-            {strings.clone("\x7f"), {}},
-            {strings.clone("\b"), {.Ctrl}},
-            {strings.clone("\e\b"), {.Alt, .Ctrl}},
+            {strings.clone("\x7f"), {}}, // technically Delete?
+            // No .Shift possible with Backspace
             {strings.clone("\e\x7f"), {.Alt}},
+            {strings.clone("\b"), {.Ctrl}}, // technically Backspace?
+            {strings.clone("\e\b"), {.Alt, .Ctrl}},
         ),
         .Enter      = make_mapping({strings.clone("\r"), {}}),
-        .UpArrow    = make_lower_arrow_mapping('A'),
-        .DownArrow  = make_lower_arrow_mapping('B'),
-        .RightArrow = make_lower_arrow_mapping('C'),
-        .LeftArrow  = make_lower_arrow_mapping('D'),
+        .UpArrow    = make_lower_fN_mapping('A'),
+        .DownArrow  = make_lower_fN_mapping('B'),
+        .RightArrow = make_lower_fN_mapping('C'),
+        .LeftArrow  = make_lower_fN_mapping('D'),
+        .End        = make_lower_fN_mapping('F', {strings.clone("\e[4~"), {}}),
+        .Home       = make_lower_fN_mapping('H', {strings.clone("\e[1~"), {}}),
         .PageUp     = make_fN_mapping(5),
         .PageDown   = make_fN_mapping(6),
-        .Home       = make_lower_arrow_mapping('H'),
-        .End        = make_lower_arrow_mapping('F'),
         .Insert     = make_fN_mapping(2),
-        .Delete     = make_fN_mapping(3),
+        .Delete     = make_fN_mapping(3), // A different Delete?
         .Tab        = make_mapping({strings.clone("\t"), {}}, {strings.clone("\e[Z"), {.Shift}}),
         .Null       = make_mapping({strings.clone("\x00"), {}}),
     }
@@ -510,44 +521,56 @@ _init_mappings :: proc() {
         return slice.clone(sequences)
     }
 
-    make_lower_arrow_mapping :: proc(n: rune) -> []Key_Sequence {
+    make_modifier_mappings :: proc(base_fmt, mod_fmt: string, n: $T, extra: ..Key_Sequence) -> []Key_Sequence {
 
         options: [dynamic]Key_Sequence
-        append(&options, Key_Sequence{fmt.aprintf("\e[{}", n), {}})
+        append(&options, Key_Sequence{fmt.aprintf(base_fmt, n), {}})
 
-        for i_mods in 2 ..= 8 {
-            k := cast(u8)i_mods - 1
-            mods: Modifiers = transmute(Modifiers)k
-            append(&options, Key_Sequence{fmt.aprintf("\e[1;{}{}", k, n), mods})
+        for i in 2 ..= 8 {
+            mods := get_modifiers(i)
+            append(&options, Key_Sequence{fmt.aprintf(mod_fmt, i, n), mods})
         }
 
+        append(&options, ..extra)
         return options[:]
     }
 
-    make_lower_fN_mapping :: proc(n: rune) -> []Key_Sequence {
-
-        options: [dynamic]Key_Sequence
-        append(&options, Key_Sequence{fmt.aprintf("\eO{}", n), {}})
-
-        for i in 2 ..= 8 {
-            mods: Modifiers = transmute(Modifiers)cast(u8)i
-            append(&options, Key_Sequence{fmt.aprintf("\e[1;{}{}", i, n), mods})
-        }
-
-        return options[:]
+    make_lower_fN_mapping :: proc(n: rune, extra: ..Key_Sequence) -> []Key_Sequence {
+        return make_modifier_mappings("\eO{}", "\e[1;{}{}", n, ..extra)
     }
 
     make_fN_mapping :: proc(n: int) -> []Key_Sequence {
+        return make_modifier_mappings("\e[{}~", "\e[{1};{0}~", n)
+    }
 
-        options: [dynamic]Key_Sequence
-        append(&options, Key_Sequence{fmt.aprintf("\e[{}~", n), {}})
+    get_modifiers :: proc(mod: int) -> Modifiers {
 
-        for i in 2 ..= 8 {
-            mods: Modifiers = transmute(Modifiers)cast(u8)i
-            append(&options, Key_Sequence{fmt.aprintf("\e[{};{}~", n, i), mods})
+        // 2 -            Shift
+        // 3 -       Alt       
+        // 4 -       Alt, Shift
+        // 5 - Ctrl            
+        // 6 - Ctrl       Shift
+        // 7 - Ctrl, Alt       
+        // 8 - Ctrl, Alt, Shift
+
+        switch mod {
+        case 2:
+            return {.Shift}
+        case 3:
+            return {.Alt}
+        case 4:
+            return {.Alt, .Shift}
+        case 5:
+            return {.Ctrl}
+        case 6:
+            return {.Ctrl, .Shift}
+        case 7:
+            return {.Ctrl, .Alt}
+        case 8:
+            return {.Ctrl, .Alt, .Shift}
+        case:
+            return {}
         }
-
-        return options[:]
     }
 }
 

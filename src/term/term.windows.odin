@@ -25,6 +25,7 @@ _initialize :: proc() {
     _enter_raw_mode :: proc() {
 
         _xterm_escape_alt_sequences(true)
+        _xterm_alternate_keymap(true)
         _xterm_bracket_paste(true)
 
         // Try to ensure that the raw
@@ -84,6 +85,7 @@ _exit_raw_mode :: proc "c" () {
     reset_styles()
 
     _xterm_escape_alt_sequences(false)
+    _xterm_alternate_keymap(false)
     _xterm_bracket_paste(false)
 
     win.SetConsoleMode(win.HANDLE(os.stdout), prev_out_mode)

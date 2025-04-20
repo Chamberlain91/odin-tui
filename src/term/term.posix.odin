@@ -5,7 +5,6 @@ package term
 import "base:runtime"
 import "core:c"
 import "core:container/queue"
-import "core:fmt"
 import "core:os"
 import "core:sys/posix"
 
@@ -19,6 +18,7 @@ _initialize :: proc() {
     _enter_raw_mode :: proc() {
 
         _xterm_escape_alt_sequences(true)
+        _xterm_alternate_keymap(true)
         _xterm_bracket_paste(true)
 
         posix.atexit(_exit_raw_mode)
@@ -62,6 +62,7 @@ _exit_raw_mode :: proc "c" () {
     reset_styles()
 
     _xterm_escape_alt_sequences(false)
+    _xterm_alternate_keymap(false)
     _xterm_bracket_paste(false)
 
     posix.tcsetattr(posix.STDIN_FILENO, .TCSANOW, &_original_term)
