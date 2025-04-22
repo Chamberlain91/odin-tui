@@ -54,28 +54,28 @@ is_terminal_output :: #force_inline proc() -> bool {
 
 // Switch to using the alternative buffer.
 enable_alternate_screen :: proc(enable := true) {
-    fmt.print(enable ? "\e[?1049h" : "\e[?1049l")
+    print(enable ? "\e[?1049h" : "\e[?1049l")
 }
 
 // Enable mouse tracking within the terminal.
 enable_mouse :: proc(enable := true) {
-    fmt.print(enable ? "\e[?1003h" : "\e[?1003l") // ANY EVENT TRACKING
-    fmt.print(enable ? "\e[?1006h" : "\e[?1006l") // SGR EXTENSION
+    print(enable ? "\e[?1003h" : "\e[?1003l") // ANY EVENT TRACKING
+    print(enable ? "\e[?1006h" : "\e[?1006l") // SGR EXTENSION
 }
 
 // Show or hide the cursor.
 show_cursor :: proc(visible := true) {
-    fmt.print(visible ? "\e[?25h" : "\e[?25l")
+    print(visible ? "\e[?25h" : "\e[?25l")
 }
 
 @(private)
 _xterm_escape_alt_sequences :: proc(enable := true) {
-    fmt.print(enable ? "\e[?1036h" : "\e[?1036l")
+    print(enable ? "\e[?1036h" : "\e[?1036l")
 }
 
 @(private)
 _xterm_bracket_paste :: proc(enable := true) {
-    fmt.print(enable ? "\e[?2004h" : "\e[?2004l")
+    print(enable ? "\e[?2004h" : "\e[?2004l")
 }
 
 // Process any pending input and events.
@@ -209,7 +209,7 @@ get_event :: proc(loc := #caller_location) -> (Event, bool) #optional_ok {
 // Gets the cursor position.
 cursor_position :: proc() -> [2]int {
     // Ask for a cursor update.
-    fmt.print("\e[6n")
+    print("\e[6n")
     // Process all pending input.
     process_input()
     // Return the latest known.
@@ -218,75 +218,75 @@ cursor_position :: proc() -> [2]int {
 
 // Sets the cursor position.
 set_cursor_position :: proc(pos: [2]int) {
-    fmt.printf("\e[%d;%dH", pos.y + 1, pos.x + 1)
+    printf("\e[%v;%vH", pos.y + 1, pos.x + 1)
 }
 
 // Moves the cursor up one or more lines.
 move_cursor_up :: proc(n := 1) {
     assert(n >= 1)
-    fmt.print("\e[%dA", n)
+    print("\e[%dA", n)
 }
 
 // Moves the cursor down one or more lines.
 move_cursor_down :: proc(n := 1) {
     assert(n >= 1)
-    fmt.printf("\e[%dB", n)
+    printf("\e[%dB", n)
 }
 
 // Moves the cursor right one or more columns.
 move_cursor_right :: proc(n := 1) {
     assert(n >= 1)
-    fmt.printf("\e[%dC", n)
+    printf("\e[%dC", n)
 }
 
 // Moves the cursor left one or more columns.
 move_cursor_left :: proc(n := 1) {
     assert(n >= 1)
-    fmt.printf("\e[%dD", n)
+    printf("\e[%dD", n)
 }
 
 // Moves the cursor to the beginning of one or more lines down.
 move_cursor_next_line :: proc(n := 1) {
     assert(n >= 1)
-    fmt.printf("\e[%dE", n)
+    printf("\e[%dE", n)
 }
 
 // Moves the cursor to the beginning of one or more lines up.
 move_cursor_previous_line :: proc(n := 1) {
     assert(n >= 1)
-    fmt.printf("\e[%dF", n)
+    printf("\e[%dF", n)
 }
 
 // Stores the current cursor position.
 save_cursor :: proc() {
-    fmt.printf("\e[7")
+    printf("\e[7")
 }
 
 // Restores the current cursor position.
 restore_cursor :: proc() {
-    fmt.printf("\e[8")
+    printf("\e[8")
 }
 
 // Erases a portion of the screen.
 erase_screen :: proc(mode := Erase_Mode.Whole) {
     switch mode {
     case .Whole:
-        fmt.print("\e[2J")
+        print("\e[2J")
     case .Before:
-        fmt.print("\e[1J")
+        print("\e[1J")
     case .After:
-        fmt.print("\e[0J")
+        print("\e[0J")
     }
 }
 
 erase_line :: proc(mode := Erase_Mode.Whole) {
     switch mode {
     case .Whole:
-        fmt.print("\e[2K")
+        print("\e[2K")
     case .Before:
-        fmt.print("\e[1K")
+        print("\e[1K")
     case .After:
-        fmt.print("\e[0K")
+        print("\e[0K")
     }
 }
 
@@ -311,27 +311,27 @@ background_color :: proc() -> Color {
 
 // Set the foreground color.
 set_foreground_color :: proc(color: Color, bright := true) {
-    fmt.printf("\e[%dm", (bright ? 90 : 30) + int(color))
+    printf("\e[%dm", (bright ? 90 : 30) + int(color))
 }
 
 // Set the background color.
 set_background_color :: proc(color: Color, bright := true) {
-    fmt.printf("\e[%dm", (bright ? 100 : 40) + int(color))
+    printf("\e[%dm", (bright ? 100 : 40) + int(color))
 }
 
 // Set the text style.
 set_style :: proc(style: Style, enable: bool) {
     if enable {
-        fmt.printf("\e[%vm", int(style))
+        printf("\e[%vm", int(style))
     } else {
         code := 20 + int(style)
         if style == .Bold || style == .Dim do code = 22
-        fmt.printf("\e[%vm", code)
+        printf("\e[%vm", code)
     }
 }
 
 reset_styles :: proc() {
-    fmt.print("\e[0m")
+    print("\e[0m")
 }
 
 INVALID_CURSOR_POSITION :: [2]int{-1, -1}
@@ -791,7 +791,7 @@ _process_mouse_input :: proc() -> bool {
         button    = button,
         modifiers = button_modifiers,
         pressed   = pressed,
-        position  = {x, y},
+        position  = {x - 1, y - 1},
     }
     queue.append(&_events, ev)
 
@@ -799,7 +799,7 @@ _process_mouse_input :: proc() -> bool {
 
     decode_mouse_input :: proc() -> (state, x, y: int, pressed, ok: bool) {
 
-        @(static) buffer: [16]byte
+        @(static) buffer: [1024]byte
 
         // esc [ < {button};{Px};{Py}m (released)
         // esc [ < {button};{Px};{Py}M (pressed)
@@ -843,4 +843,14 @@ _process_mouse_input :: proc() -> bool {
         ok = true
         return
     }
+}
+
+@(private)
+print :: proc(args: ..any) {
+    fmt.print(..args, flush = false)
+}
+
+@(private)
+printf :: proc(format: string, args: ..any) {
+    fmt.printf(format, ..args, flush = false)
 }

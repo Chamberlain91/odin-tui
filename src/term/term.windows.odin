@@ -160,7 +160,7 @@ _terminal_size :: proc() -> [2]int {
     }
 
     return [2]int {     //
-        int(sbi.srWindow.Bottom - sbi.srWindow.Top) + 1,
         int(sbi.srWindow.Right - sbi.srWindow.Left) + 1,
+        int(sbi.srWindow.Bottom - sbi.srWindow.Top) + 1,
     }
 }
