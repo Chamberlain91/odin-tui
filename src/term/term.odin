@@ -78,11 +78,6 @@ _xterm_bracket_paste :: proc(enable := true) {
     fmt.print(enable ? "\e[?2004h" : "\e[?2004l")
 }
 
-@(private)
-_xterm_alternate_keymap :: proc(enable := true) {
-    fmt.print(enable ? "\e[?1h\e=" : "\e[?1l\e>")
-}
-
 // Process any pending input and events.
 process_input :: proc() {
 
@@ -503,12 +498,12 @@ _init_mappings :: proc() {
             {strings.clone("\e\b"), {.Alt, .Ctrl}},
         ),
         .Enter      = make_mapping({strings.clone("\r"), {}}),
-        .UpArrow    = make_lower_fN_mapping('A'),
-        .DownArrow  = make_lower_fN_mapping('B'),
-        .RightArrow = make_lower_fN_mapping('C'),
-        .LeftArrow  = make_lower_fN_mapping('D'),
-        .End        = make_lower_fN_mapping('F', {strings.clone("\e[4~"), {}}),
-        .Home       = make_lower_fN_mapping('H', {strings.clone("\e[1~"), {}}),
+        .UpArrow    = make_arrow_mapping('A'),
+        .DownArrow  = make_arrow_mapping('B'),
+        .RightArrow = make_arrow_mapping('C'),
+        .LeftArrow  = make_arrow_mapping('D'),
+        .End        = make_arrow_mapping('F'),
+        .Home       = make_arrow_mapping('H'),
         .PageUp     = make_fN_mapping(5),
         .PageDown   = make_fN_mapping(6),
         .Insert     = make_fN_mapping(2),
@@ -521,7 +516,19 @@ _init_mappings :: proc() {
         return slice.clone(sequences)
     }
 
-    make_modifier_mappings :: proc(base_fmt, mod_fmt: string, n: $T, extra: ..Key_Sequence) -> []Key_Sequence {
+    make_lower_fN_mapping :: proc(n: rune) -> []Key_Sequence {
+        return make_mod_mapping("\eO{}", "\e[1;{}{}", n)
+    }
+
+    make_fN_mapping :: proc(n: int) -> []Key_Sequence {
+        return make_mod_mapping("\e[{}~", "\e[{1};{0}~", n)
+    }
+
+    make_arrow_mapping :: proc(n: rune) -> []Key_Sequence {
+        return make_mod_mapping("\e[{}", "\e[1;{0}{1}", n)
+    }
+
+    make_mod_mapping :: proc(base_fmt, mod_fmt: string, n: $T) -> []Key_Sequence {
 
         options: [dynamic]Key_Sequence
         append(&options, Key_Sequence{fmt.aprintf(base_fmt, n), {}})
@@ -531,16 +538,7 @@ _init_mappings :: proc() {
             append(&options, Key_Sequence{fmt.aprintf(mod_fmt, i, n), mods})
         }
 
-        append(&options, ..extra)
         return options[:]
-    }
-
-    make_lower_fN_mapping :: proc(n: rune, extra: ..Key_Sequence) -> []Key_Sequence {
-        return make_modifier_mappings("\eO{}", "\e[1;{}{}", n, ..extra)
-    }
-
-    make_fN_mapping :: proc(n: int) -> []Key_Sequence {
-        return make_modifier_mappings("\e[{}~", "\e[{1};{0}~", n)
     }
 
     get_modifiers :: proc(mod: int) -> Modifiers {
