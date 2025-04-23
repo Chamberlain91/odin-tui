@@ -30,6 +30,12 @@ shutdown :: proc() {
         _read_stdin()
     }
 
+    // TODO: Is there a better "recover terminal" mechanism?
+    enable_alternate_screen(false)
+    enable_mouse(false)
+    show_cursor(true)
+    reset_styles()
+
     _free_mappings()
     _shutdown()
 
@@ -50,6 +56,14 @@ is_terminal_input :: #force_inline proc() -> bool {
 // Determines if the output is to a terminal (as opposed to writing to a file or pipe).
 is_terminal_output :: #force_inline proc() -> bool {
     return _is_tty_out()
+}
+
+print :: proc(args: ..any) {
+    fmt.print(..args, flush = false)
+}
+
+printf :: proc(format: string, args: ..any) {
+    fmt.printf(format, ..args, flush = false)
 }
 
 // Switch to using the alternative buffer.
@@ -81,17 +95,13 @@ _xterm_bracket_paste :: proc(enable := true) {
 // Process any pending input and events.
 process_input :: proc() {
 
-    for _has_stdin_input() {
-        _read_stdin()
-    }
-
     _process_resize()
+    _read_stdin()
 
     input_loop: for input_available() > 0 {
 
-        for _has_stdin_input() {
-            _read_stdin()
-        }
+        // Read some user input.
+        _read_stdin()
 
         // Attempt to read various escape sequences.
         if _process_mouse_input() do continue // \e[<b;y;xM
@@ -101,9 +111,7 @@ process_input :: proc() {
         // Nothing more to do if we have consumed everything.
         if input_available() == 0 do break
 
-        // TODO: How do we detect just pressing escape?
-        // - Read somewhere they use a timer.
-
+        // Detects a solo escape (key).
         if _potential_escape_key {
             _potential_escape_key = false
 
@@ -153,7 +161,6 @@ process_input :: proc() {
         // Unknown input key/input sequence, so append each rune?
         // TODO: What do to here
 
-        @(static) buffer: [16]byte
         if utf8.rune_size(input_get(0)) > 0 {
             sb := strings.builder_make_len_cap(0, utf8.rune_size(input_get(0)), context.temp_allocator)
             strings.write_rune(&sb, input_get(0))
@@ -181,8 +188,6 @@ process_input :: proc() {
             }
             queue.append(&_events, ev)
         }
-
-        log.infof("unknown input: '{}' ({:x})", input_get(0), int(input_get(0)))
 
         input_consume(1)
     }
@@ -299,24 +304,14 @@ Erase_Mode :: enum {
     After,
 }
 
-foreground_color :: proc() -> Color {
-    // TODO
-    return .Default
-}
-
-background_color :: proc() -> Color {
-    // TODO
-    return .Default
-}
-
 // Set the foreground color.
-set_foreground_color :: proc(color: Color, bright := true) {
-    printf("\e[%dm", (bright ? 90 : 30) + int(color))
+set_foreground_color :: proc(color: Color) {
+    printf("\e[%dm", 30 + int(color))
 }
 
 // Set the background color.
-set_background_color :: proc(color: Color, bright := true) {
-    printf("\e[%dm", (bright ? 100 : 40) + int(color))
+set_background_color :: proc(color: Color) {
+    printf("\e[%dm", 40 + int(color))
 }
 
 // Set the text style.
@@ -843,14 +838,4 @@ _process_mouse_input :: proc() -> bool {
         ok = true
         return
     }
-}
-
-@(private)
-print :: proc(args: ..any) {
-    fmt.print(..args, flush = false)
-}
-
-@(private)
-printf :: proc(format: string, args: ..any) {
-    fmt.printf(format, ..args, flush = false)
 }

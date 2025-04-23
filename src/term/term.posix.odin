@@ -13,35 +13,30 @@ _raw_mode: bool
 
 _initialize :: proc() {
 
-    _enter_raw_mode()
+    _xterm_escape_alt_sequences(true)
+    _xterm_bracket_paste(true)
 
-    _enter_raw_mode :: proc() {
+    posix.atexit(_exit_raw_mode)
 
-        _xterm_escape_alt_sequences(true)
-        _xterm_bracket_paste(true)
-
-        posix.atexit(_exit_raw_mode)
-
-        // Get current terminal attributes.
-        if posix.tcgetattr(posix.STDIN_FILENO, &_original_term) == .FAIL {
-            panic("Unable to get terminal attributes.")
-        }
-
-        term := _original_term
-        term.c_iflag -= {.IGNBRK, .BRKINT, .PARMRK, .ISTRIP, .INLCR, .IGNCR, .ICRNL, .IXON}
-        term.c_oflag -= {.OPOST}
-        term.c_cflag += {.CS8}
-        term.c_lflag -= {.ECHO, .ECHONL, .ICANON, .ISIG, .IEXTEN}
-
-        term.c_cc[.VMIN] = 0
-        term.c_cc[.VTIME] = 0
-
-        if posix.tcsetattr(posix.STDIN_FILENO, .TCSANOW, &term) == .FAIL {
-            panic("Unable to set new terminal attributes.")
-        }
-
-        _raw_mode = true
+    // Get current terminal attributes.
+    if posix.tcgetattr(posix.STDIN_FILENO, &_original_term) == .FAIL {
+        panic("Unable to get terminal attributes.")
     }
+
+    term := _original_term
+    term.c_iflag -= {.IGNBRK, .BRKINT, .PARMRK, .ISTRIP, .INLCR, .IGNCR, .ICRNL, .IXON}
+    term.c_oflag -= {.OPOST}
+    term.c_cflag += {.CS8}
+    term.c_lflag -= {.ECHO, .ECHONL, .ICANON, .ISIG, .IEXTEN}
+
+    term.c_cc[.VMIN] = 0
+    term.c_cc[.VTIME] = 0
+
+    if posix.tcsetattr(posix.STDIN_FILENO, .TCSANOW, &term) == .FAIL {
+        panic("Unable to set new terminal attributes.")
+    }
+
+    _raw_mode = true
 }
 
 _shutdown :: proc() {
@@ -54,11 +49,6 @@ _exit_raw_mode :: proc "c" () {
     if !_raw_mode do return
 
     context = runtime.default_context()
-
-    enable_alternate_screen(false)
-    enable_mouse(false)
-    show_cursor(true)
-    reset_styles()
 
     _xterm_escape_alt_sequences(false)
     _xterm_bracket_paste(false)
