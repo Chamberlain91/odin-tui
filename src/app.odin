@@ -88,6 +88,12 @@ draw_chess_board :: proc(canvas: tui.Canvas, game: chess.Game) {
     x_offset := (canvas.size.x - VISUAL_BOARD_WIDTH) / 2
     y_offset := (canvas.size.y - VISUAL_BOARD_HEIGHT) / 2
 
+    if game.current_side {
+        tui.canvas_write(canvas, {x_offset + 1, y_offset - 1}, "White", .Cyan)
+    } else {
+        tui.canvas_write(canvas, {x_offset + 1, y_offset - 1}, "Black", .Magenta)
+    }
+
     for yi in 0 ..< 8 {
         y := y_offset + (yi * 2)
         for xi in 0 ..< 8 {

@@ -21,8 +21,9 @@ Piece :: enum u8 {
 }
 
 Game :: struct {
-    board:    [64]Piece,
-    selected: Position,
+    board:        [64]Piece,
+    selected:     Position,
+    current_side: bool,
 }
 
 get_piece :: proc(game: Game, position: Position) -> Piece {

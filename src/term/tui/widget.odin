@@ -51,6 +51,25 @@ canvas_set :: proc(canvas: Canvas, position: [2]int, rune: rune) {
     canvas_get_ptr(canvas, position).rune = rune
 }
 
+canvas_write :: proc(
+    canvas: Canvas,
+    position: [2]int,
+    text: string,
+    fg: Maybe(term.Color) = nil,
+    bg: Maybe(term.Color) = nil,
+) {
+    fg, fg_ok := fg.(term.Color)
+    bg, bg_ok := bg.(term.Color)
+
+    position := position
+    for ch in text {
+        if fg_ok do canvas_set_fg_color(canvas, position, fg)
+        if bg_ok do canvas_set_bg_color(canvas, position, bg)
+        canvas_set(canvas, position, ch)
+        position.x += 1
+    }
+}
+
 canvas_set_fg_color :: proc(canvas: Canvas, position: [2]int, color: term.Color) {
     canvas_get_ptr(canvas, position).fg_color = color
 }
