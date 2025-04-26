@@ -1,6 +1,6 @@
 #+build !windows
 #+private
-package term
+package odin_tui
 
 import "base:runtime"
 import "core:c"

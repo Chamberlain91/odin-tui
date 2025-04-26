@@ -1,4 +1,4 @@
-package term
+package odin_tui
 
 import "core:container/queue"
 import "core:fmt"
@@ -68,7 +68,7 @@ printf :: proc(format: string, args: ..any) {
 
 // Switch to using the alternative buffer.
 enable_alternate_screen :: proc(enable := true) {
-    print(enable ? "\e[?1049h" : "\e[?1049l")
+    fmt.print(enable ? "\e[?1049h" : "\e[?1049l", flush = true)
 }
 
 // Enable mouse tracking within the terminal.
@@ -195,7 +195,7 @@ process_input :: proc() {
 
 // Gets the size of the terminal (in glyph count).
 size :: proc() -> [2]int {
-    return _terminal_size()
+    return _state.size
 }
 
 // Determines if any events have been placed in the queue.
@@ -205,9 +205,13 @@ has_event :: proc() -> bool {
 
 // Gets the next event to process.
 get_event :: proc(loc := #caller_location) -> (Event, bool) #optional_ok {
+
+    process_input()
+
     if has_event() {
         return queue.pop_front(&_events, loc), true
     }
+
     return {}, false
 }
 
@@ -659,11 +663,11 @@ input_copy :: proc(buffer: []byte, offset: int, count: int, loc := #caller_locat
 @(private)
 _process_resize :: proc() {
 
-    if size() == _state.size do return
-    _state.size = size()
+    if _terminal_size() == _state.size do return
+    _state.size = _terminal_size()
 
     ev := Size_Event {
-        size = size(),
+        size = _state.size,
     }
     queue.append(&_events, ev)
 }

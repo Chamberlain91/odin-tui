@@ -1,6 +1,5 @@
-package oak_tui
+package odin_tui
 
-import term ".."
 import "core:slice"
 
 Widget :: struct {
@@ -23,8 +22,8 @@ Canvas :: struct {
 
 Cell :: struct {
     rune:     rune,
-    fg_color: term.Color,
-    bg_color: term.Color,
+    fg_color: Color,
+    bg_color: Color,
 }
 
 canvas_create :: proc(size: [2]int) -> Canvas {
@@ -32,6 +31,7 @@ canvas_create :: proc(size: [2]int) -> Canvas {
         storage = make([]Cell, size.x * size.y),
         size    = size,
     }
+    canvas_clear(canvas)
     return canvas
 }
 
@@ -51,15 +51,9 @@ canvas_set :: proc(canvas: Canvas, position: [2]int, rune: rune) {
     canvas_get_ptr(canvas, position).rune = rune
 }
 
-canvas_write :: proc(
-    canvas: Canvas,
-    position: [2]int,
-    text: string,
-    fg: Maybe(term.Color) = nil,
-    bg: Maybe(term.Color) = nil,
-) {
-    fg, fg_ok := fg.(term.Color)
-    bg, bg_ok := bg.(term.Color)
+canvas_write :: proc(canvas: Canvas, position: [2]int, text: string, fg: Maybe(Color) = nil, bg: Maybe(Color) = nil) {
+    fg, fg_ok := fg.(Color)
+    bg, bg_ok := bg.(Color)
 
     position := position
     for ch in text {
@@ -70,19 +64,20 @@ canvas_write :: proc(
     }
 }
 
-canvas_set_fg_color :: proc(canvas: Canvas, position: [2]int, color: term.Color) {
+canvas_set_fg_color :: proc(canvas: Canvas, position: [2]int, color: Color) {
     canvas_get_ptr(canvas, position).fg_color = color
 }
 
-canvas_set_bg_color :: proc(canvas: Canvas, position: [2]int, color: term.Color) {
+canvas_set_bg_color :: proc(canvas: Canvas, position: [2]int, color: Color) {
     canvas_get_ptr(canvas, position).bg_color = color
 }
 
 // Fill the canvas with ' ' rune, and default colors.
-canvas_clear :: proc(canvas: Canvas) {
-    slice.fill(canvas.storage, Cell{' ', .Default, .Default})
+canvas_clear :: proc(canvas: Canvas, rune := ' ', fg := Color.Default, bg := Color.Default) {
+    slice.fill(canvas.storage, Cell{rune, fg, bg})
 }
 
+// Resizes the canvas, much like realloc.
 canvas_resize :: proc(canvas: ^Canvas, size: [2]int, blit := true) {
 
     new_canvas := canvas_create(size)
@@ -99,35 +94,43 @@ canvas_resize :: proc(canvas: ^Canvas, size: [2]int, blit := true) {
     canvas^ = new_canvas
 }
 
-canvas_blit :: proc(canvas: Canvas) {
+canvas_blit :: proc(canvas: Canvas, offset: [2]int = {0, 0}) {
 
-    term.save_cursor()
-    defer term.restore_cursor()
+    process_input()
+
+    save_cursor()
+    defer restore_cursor()
 
     // TODO: Is there a way to query current term color?
-    fg_color: term.Color = cast(term.Color)0xFF
-    bg_color: term.Color = cast(term.Color)0xFF
-    term.reset_styles()
+    fg_color: Color = cast(Color)0xFF
+    bg_color: Color = cast(Color)0xFF
+    reset_styles()
 
-    for y in 0 ..< canvas.size.y {
-        term.set_cursor_position({0, y})
-        for x in 0 ..< canvas.size.x {
+    x0 := max(offset.x, 0)
+    x1 := min(offset.x + canvas.size.x, _state.size.x)
+
+    y0 := max(offset.y, 0)
+    y1 := min(offset.y + canvas.size.y, _state.size.y)
+
+    for y in 0 ..< (y1 - y0) {
+        set_cursor_position({x0, y0 + y})
+        for x in 0 ..< (x1 - x0) {
             cell := canvas_get_ptr(canvas, {x, y})
 
             if fg_color != cell.fg_color {
-                term.set_foreground_color(cell.fg_color)
+                set_foreground_color(cell.fg_color)
                 fg_color = cell.fg_color
             }
 
             if bg_color != cell.bg_color {
-                term.set_background_color(cell.bg_color)
+                set_background_color(cell.bg_color)
                 bg_color = cell.bg_color
             }
 
-            term.print(cell.rune)
+            print(cell.rune)
         }
-        term.move_cursor_next_line()
+        move_cursor_next_line()
     }
 
-    term.print()
+    print()
 }

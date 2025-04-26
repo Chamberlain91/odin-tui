@@ -31,7 +31,3 @@
 
 # VS Code
 .vscode
-
-# Runtime generated files
-generated_*
-latest.log
