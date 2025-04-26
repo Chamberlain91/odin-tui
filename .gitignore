@@ -31,3 +31,7 @@
 
 # VS Code
 .vscode
+
+# Example build artifacts
+src/example/example
+src/example/example.exe
