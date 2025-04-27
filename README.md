@@ -39,3 +39,12 @@ main :: proc() {
     }
 }
 ```
+
+## How to run the example?
+
+```odin
+cd example
+odin run .
+```
+
+Use `w`, `a`, `s`, and `d` to move. Its not a good game of snake, you can't crash into yourself... but it does show the library doing its thing.
