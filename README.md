@@ -9,7 +9,7 @@ Note: It might not actually be VT100 compliant, it might use other features I'm 
 ```odin
 package app
 
-import "../tui"
+import "../tui" // or however you want to include it
 
 main :: proc() {
 
@@ -21,7 +21,7 @@ main :: proc() {
 
     main_loop: for {
 
-        for do #partial switch ev in tui.get_event() or_break {
+        for do switch ev in tui.get_event() or_break {
         case tui.Size_Event:
             // Handle resize
         case tui.Mouse_Event:

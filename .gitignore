@@ -33,5 +33,6 @@
 .vscode
 
 # Example build artifacts
-src/example/example
-src/example/example.exe
+example/example.exe
+example/example.pdb
+example/example

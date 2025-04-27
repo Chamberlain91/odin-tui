@@ -5,8 +5,8 @@
         {
             "name": "default",
             "checker_path": [
-                "src/example",
-                "src/tui"
+                "example",
+                "tui"
             ]
         }
     ],
